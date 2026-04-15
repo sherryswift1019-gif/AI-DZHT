@@ -7,13 +7,15 @@ import { EditAgentPage } from '@/pages/agent-management/EditAgentPage'
 import { CommandLibraryPage } from '@/pages/commands/CommandLibraryPage'
 import { ProjectListPage } from '@/pages/project-management/ProjectListPage'
 import { ProjectDetailPage } from '@/pages/project-management/ProjectDetailPage'
+import { useThemeStore } from '@/stores/themeStore'
 
 const queryClient = new QueryClient()
 
 export default function App() {
+  const theme = useThemeStore((s) => s.theme)
   return (
     <QueryClientProvider client={queryClient}>
-      <div data-theme="dark">
+      <div data-theme={theme}>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Navigate to="/projects" replace />} />

@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Bot, Briefcase } from 'lucide-react'
+import { Bot, Briefcase, Sun, Moon } from 'lucide-react'
+import { useThemeStore } from '@/stores/themeStore'
 
 const NAV = [
   { to: '/projects', icon: Briefcase, label: '项目管理' },
@@ -8,6 +9,7 @@ const NAV = [
 ]
 
 export function AppShell() {
+  const { theme, toggle } = useThemeStore()
   return (
     <div className="flex min-h-screen flex-col bg-[var(--bg-base)]">
       {/* Top navbar */}
@@ -45,8 +47,15 @@ export function AppShell() {
           ))}
         </nav>
 
-        {/* Right — version label */}
-        <div className="ml-auto flex items-center">
+        {/* Right — theme toggle + version */}
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={toggle}
+            aria-label={theme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-2)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-1)] transition-colors"
+          >
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
           <span className="text-[10px] text-[var(--text-3)]">v0.1.0 · MVP</span>
         </div>
       </header>

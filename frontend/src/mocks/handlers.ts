@@ -62,6 +62,158 @@ function nowMinus(minAgo: number): string {
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
+// ── 实时日志递进模拟 ────────────────────────────────────────────────────────
+const runningCallCounters = new Map<string, number>()
+
+const LIVE_LOGS: Record<string, string[]> = {
+  Mary: [
+    '[init] 加载需求上下文与项目配置',
+    '[tool:web_search] 查询「{REQ}」行业背景与市场规模',
+    '[result] 检索到 23 篇相关文档，筛选高质量来源 6 篇',
+    '[tool:web_search] 竞品调研：识别同类产品 5 个',
+    '[analysis] 市场规模估算完成：TAM 约 150 亿，增速 18% YoY',
+    '[analysis] 竞品功能矩阵构建完毕，差异化切入点：AI 自动化',
+    '[writing] 开始撰写商业简报，当前进度 30%...',
+    '[writing] 竞品分析报告：已完成 5/8 个评估维度',
+    '[review] 数据引用核实完成，置信度评估通过',
+    '[writing] 商业简报终稿生成：1,456 字，含 3 张对比表',
+    '[output] ✓ 商业简报 · 竞品分析报告 · 项目背景文档 已就绪',
+  ],
+  John: [
+    '[init] 读取商业分析阶段产出物（3 份文档）',
+    '[tool:read_file] 解析竞品功能矩阵，提取用户痛点 9 条',
+    '[analysis] 核心痛点归并：确认 3 个优先级最高的问题',
+    '[planning] 功能边界划定：确定 MVP 范围，移除 4 个 nice-to-have',
+    '[tool:write_file] 初始化 PRD 文档结构，12 个章节',
+    '[writing] 用户故事撰写中：已完成 11/16 个 User Story',
+    '[tool:call_llm] 生成验收标准（消耗 420 tokens）',
+    '[writing] Epic 拆解完成：4 个 Epic → 17 个 Story',
+    '[review] 需求一致性检查：无冲突项，优先级已对齐',
+    '[writing] PRD 终稿完成，共 3,200 字，含完整功能矩阵',
+    '[output] ✓ 产品需求文档（PRD）· Epic 列表 · 产品愿景说明 已就绪',
+  ],
+  Sally: [
+    '[init] 读取 PRD 与用户故事清单',
+    '[analysis] 识别核心用户流程：7 个主场景，3 个边界态',
+    '[tool:figma] 初始化设计画板，建立设计系统变量',
+    '[design] 信息架构梳理：导航层级 3 层，主功能入口 6 个',
+    '[tool:write_file] 用户流程图：完成 4/7 个主场景',
+    '[design] 线框稿绘制中：Dashboard 页完成，配置弹窗进行中',
+    '[review] 可用性自评：交互路径最长 4 步，符合标准',
+    '[design] 组件规范整理：新增 12 个原子组件，3 个复合组件',
+    '[tool:write_file] 交互说明文档初稿：覆盖 15 个关键交互点',
+    '[review] 设计评审清单通过，无遗漏场景',
+    '[output] ✓ UX 设计文档 · 交互说明文档 已就绪',
+  ],
+  Winston: [
+    '[init] 读取 PRD 与技术栈约定文档',
+    '[analysis] 识别系统关键路径：5 个核心模块，3 个外部依赖',
+    '[design] 评估架构方案 A（单体）vs B（微服务）vs C（Serverless）',
+    '[decision] 选定方案 A + 垂直扩展：适配原型阶段，可平滑演进',
+    '[tool:diagram] 生成系统架构图（含服务边界与数据流向）',
+    '[design] 数据模型设计：5 个核心实体，12 个关联关系',
+    '[design] API 接口规范：15 个 endpoints，遵循 RESTful',
+    '[tool:write_file] 生成 ADR-001：技术选型决策记录',
+    '[review] 架构安全审查：无单点故障，已设计降级策略',
+    '[writing] 架构文档终稿：含决策背景、设计原则、演进路径',
+    '[output] ✓ 架构设计文档 · 技术选型报告 已就绪',
+  ],
+  Bob: [
+    '[init] 读取 PRD、架构文档与团队约定',
+    '[analysis] 解析 Epic 依赖关系图，构建任务拓扑排序',
+    '[planning] Story 拆分：4 个 Epic → 估算产出 17 个 Story',
+    '[tool:estimate] 工作量评估：Dev 7d · QA 3d · Review 1d / sprint',
+    '[writing] STORY-001: 需求创建表单 (3d, P0) ✓',
+    '[writing] STORY-002: 工作流配置 Modal (5d, P0) ✓',
+    '[writing] STORY-003: AI 推荐接口 (2d, P1) ✓',
+    '[writing] STORY-004 → STORY-008: 流水线功能模块 ✓',
+    '[planning] Sprint 1 排期确认：共 10d，6 个 Story',
+    '[planning] Sprint 2 排期确认：共 10d，5 个 Story，含缓冲 1d',
+    '[output] ✓ Sprint 计划 · User Story 列表 已就绪',
+  ],
+  Amelia: [
+    '[init] 读取 Story 详情与架构设计规范',
+    '[tool:read_file] 扫描现有代码结构（src/ 143 个文件）',
+    '[analysis] 影响面分析：需新建 3 个组件，修改 4 个 hook',
+    '[tool:write_file] useArtifactContent.ts 实现完成（47 行）',
+    '[code] ProjectDetailPage.tsx：新增 Tab 组件逻辑',
+    '[tool:run_lint] ESLint 检查... 1 个 warning，已修复',
+    '[code] TypeScript 类型定义补全，noImplicitAny 通过',
+    '[tool:write_file] handlers.ts：新增 MSW mock 响应 ✓',
+    '[tool:run_test] 单元测试运行中... 12/14 通过',
+    '[fix] 修复 useEffect 竞态条件（#bug-8821）',
+    '[tool:run_test] 全量测试 14/14 ✅ 覆盖率 88%',
+    '[output] ✓ 功能代码实现 · 技术说明文档 已就绪',
+  ],
+  Quinn: [
+    '[init] 读取功能代码、验收标准与测试计划',
+    '[analysis] 生成测试矩阵：8 个场景，估算 42 个用例',
+    '[tool:write_test] test_requirement_create_valid ✓',
+    '[tool:write_test] test_workflow_suggest_full ✓',
+    '[tool:write_test] test_pipeline_step_transition ✓',
+    '[tool:run_test] 第 1 轮：42 个用例... 通过 38，失败 4',
+    '[debug] 分析失败用例：阻塞恢复(P1)、并发写入(P1)、UI边界(P2)×2',
+    '[tool:report] 生成缺陷报告：4 个 issue，2 个需发版前修复',
+    '[fix] 提交修复建议给 Amelia（issue #142, #143）',
+    '[tool:run_test] 第 2 轮（修复后）：42 个用例... 通过 39，失败 2',
+    '[output] ✓ 自动化测试报告 · 代码评审报告 已就绪',
+  ],
+  Barry: [
+    '[init] 读取需求详情，评估最小实现范围',
+    '[analysis] 核心路径识别：3 个关键功能，2 个次要功能延后',
+    '[tool:read_file] 检查现有代码可复用部分（复用率约 40%）',
+    '[code] 实现主功能逻辑（快速原型模式）',
+    '[tool:run_lint] 代码检查...通过，0 error 2 warning',
+    '[code] 补充基础错误处理与边界条件',
+    '[tool:run_test] 冒烟测试：核心路径 5/5 通过 ✅',
+    '[output] ✓ 快速开发产物 已就绪',
+  ],
+  Paige: [
+    '[init] 读取代码实现与接口变更记录',
+    '[analysis] 文档范围评估：接口 15 个，组件 8 个，部署流程 3 步',
+    '[tool:read_file] 解析 API endpoints 生成接口文档框架',
+    '[writing] 接口文档：完成 10/15 个 endpoint 描述',
+    '[writing] 组件使用说明：Props 表格 + 代码示例',
+    '[tool:write_file] 部署指南初稿：含环境配置与常见问题',
+    '[review] 文档完整性检查：无遗漏接口',
+    '[writing] 用户手册终稿：5 个章节，配截图说明',
+    '[output] ✓ 技术文档 已就绪',
+  ],
+}
+
+function getRunningProgress(agentName: string, stepName: string, cmds: string[], reqTitle: string): StepDetailResponse['progress'] {
+  const key = `${agentName}:${stepName}`
+  const callCount = (runningCallCounters.get(key) ?? 0) + 1
+  runningCallCounters.set(key, callCount)
+
+  const rawLogs = LIVE_LOGS[agentName] ?? [
+    `[init] 加载需求上下文：${reqTitle}`,
+    `[run] 开始处理，读取前置步骤产出物`,
+    `[run] 分析中，生成初稿结构...`,
+    `[run] 内容扩充与质量检查`,
+    `[run] 正在完善细节，即将输出结果`,
+  ]
+
+  const visibleCount = Math.min(2 + callCount * 2, rawLogs.length)
+  const logLines = rawLogs.slice(0, visibleCount).map((text, i) => ({
+    time: nowMinus(Math.max(0, visibleCount - i - 1)),
+    text: text.replace('{REQ}', reqTitle),
+  }))
+
+  const cmdProgress = Math.min(Math.floor(visibleCount / Math.ceil(rawLogs.length / cmds.length)), cmds.length - 1)
+  const currentCommand = cmds[cmdProgress] ?? cmds[0] ?? '执行中'
+  const completedCommands = cmds.slice(0, cmdProgress)
+  const remaining = Math.max(1, Math.ceil((rawLogs.length - visibleCount) / 2))
+
+  return {
+    currentCommand,
+    completedCommands,
+    logLines,
+    startedAt: nowMinus(Math.ceil(visibleCount / 2)),
+    estimatedRemainingMinutes: remaining,
+  }
+}
+
 function mockStepDetail(req: StepDetailRequest): StepDetailResponse {
   const { agentName, stepName, status, commands, reqTitle } = req
   const cmds = commands.split(/[→\->,\s]+/).map(c => c.trim()).filter(Boolean)
@@ -80,23 +232,11 @@ function mockStepDetail(req: StepDetailRequest): StepDetailResponse {
   }
 
   if (status === 'running') {
-    const startedAt = nowMinus(8)
+    const progress = getRunningProgress(agentName, stepName, cmds.length ? cmds : [commands], reqTitle)
     return {
       status: 'running',
       summary: `${agentName} 正在执行「${stepName}」，处理需求「${reqTitle}」`,
-      progress: {
-        currentCommand: cmds[0] ?? commands,
-        completedCommands: [],
-        logLines: [
-          { time: nowMinus(8), text: `[init] 加载需求上下文：${reqTitle}` },
-          { time: nowMinus(6), text: `[${cmds[0] ?? 'run'}] 开始分析，读取前置步骤产出物` },
-          { time: nowMinus(4), text: `[${cmds[0] ?? 'run'}] 生成初稿结构...` },
-          { time: nowMinus(2), text: `[${cmds[0] ?? 'run'}] 内容扩充与质量检查` },
-          { time: nowMinus(0), text: `[${cmds[0] ?? 'run'}] 正在完善细节，即将输出结果` },
-        ],
-        startedAt,
-        estimatedRemainingMinutes: Math.floor(Math.random() * 15 + 8),
-      },
+      progress,
     }
   }
 
@@ -410,7 +550,7 @@ export const handlers = [
   // POST /api/v1/steps/detail — mock fallback（后端未启动时生效）
   http.post(`${BASE}/steps/detail`, async ({ request }) => {
     const body = await request.json() as StepDetailRequest
-    await new Promise(r => setTimeout(r, 600))
+    await new Promise(r => setTimeout(r, 80))
     return HttpResponse.json(mockStepDetail(body))
   }),
 
@@ -419,6 +559,52 @@ export const handlers = [
     const body = await request.json() as ArtifactContentRequest
     await new Promise(r => setTimeout(r, 900))
     return HttpResponse.json(mockArtifactContent(body))
+  }),
+
+  // POST /api/v1/projects/generate-context — AI 生成项目上下文 mock
+  http.post(`${BASE}/projects/generate-context`, async ({ request }) => {
+    const body = await request.json() as {
+      name: string
+      description: string
+      repository?: string
+      existingContext?: { industry: string; techStack: Array<{ name: string } | string>; rules?: Array<{ text: string } | string> }
+    }
+    await new Promise(r => setTimeout(r, 1200))
+    const name = body.name ?? ''
+    const desc = body.description ?? ''
+    const existing = body.existingContext
+
+    // 根据项目名称/描述推断行业与技术栈
+    const isAI = /AI|智能|机器学习|模型|大模型|LLM/i.test(name + desc)
+    const isMobile = /移动|App|iOS|Android|小程序/i.test(name + desc)
+    const isData = /数据|分析|报表|BI|dashboard/i.test(name + desc)
+
+    const industry = existing?.industry
+      || (isAI ? 'AI / 智能化软件' : isMobile ? '移动互联网' : isData ? '数据分析 / BI' : 'SaaS / 企业软件')
+
+    const existingTech = existing?.techStack ?? []
+    const techStack = existingTech.length
+      ? existingTech.map((t) => typeof t === 'string' ? t : t.name)
+      : isAI
+        ? ['Python', 'FastAPI', 'React', 'TypeScript', 'LangChain', 'PostgreSQL']
+        : isMobile
+          ? ['React Native', 'TypeScript', 'Node.js', 'PostgreSQL']
+          : isData
+            ? ['Python', 'FastAPI', 'React', 'TypeScript', 'ECharts', 'PostgreSQL']
+            : ['React', 'TypeScript', 'FastAPI', 'Python', 'SQLite']
+
+    const existingRules = existing?.rules ?? []
+    const conventions = existingRules.length
+      ? existingRules.map((r) => typeof r === 'string' ? r : r.text)
+      : [
+          'PRD 变更必须经版本评审后方可进入开发',
+          '阻塞超过 2 小时必须触发告警并同步项目负责人',
+          'API 接口遵循 RESTful 规范，错误码统一返回 RFC 7807 格式',
+          'PR 合并前须通过 CI 检查并获得至少 1 名成员 Approve',
+          '涉及数据库 Schema 变更须提供回滚方案',
+        ]
+
+    return HttpResponse.json({ industry, techStack, conventions })
   }),
 
   // /api/v1/workflow/** 不在此拦截 — 由 Vite proxy 代理到 localhost:8000

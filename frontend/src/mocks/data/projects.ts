@@ -26,13 +26,19 @@ export const mockProjects: Project[] = [
     endDate: '2026-05-31',
     budget: 1240,
     context: {
+      goal: '',
+      targetUsers: '',
       industry: 'SaaS / 企业软件',
-      techStack: ['React', 'TypeScript', 'Node.js', 'PostgreSQL'],
-      conventions: [
-        'PRD 变更必须走版本评审',
-        '所有流水线步骤必须可追踪状态',
-        '阻塞超过 2 小时必须触发告警',
+      techStack: [{ name: 'React' }, { name: 'TypeScript' }, { name: 'Node.js' }, { name: 'PostgreSQL' }],
+      archSummary: '',
+      avoid: [],
+      rules: [
+        { scope: 'all' as const, text: 'PRD 变更必须走版本评审', source: 'human' as const },
+        { scope: 'all' as const, text: '所有流水线步骤必须可追踪状态', source: 'human' as const },
+        { scope: 'all' as const, text: '阻塞超过 2 小时必须触发告警', source: 'human' as const },
       ],
+      domainModel: '',
+      lessons: [],
     },
   },
   {
@@ -48,9 +54,18 @@ export const mockProjects: Project[] = [
     endDate: '2026-06-15',
     budget: 0,
     context: {
+      goal: '',
+      targetUsers: '',
       industry: '平台工具',
-      techStack: ['React', 'Go', 'ClickHouse'],
-      conventions: ['接口变更需要同步更新监控指标', '核心视图加载时间小于 2 秒'],
+      techStack: [{ name: 'React' }, { name: 'Go' }, { name: 'ClickHouse' }],
+      archSummary: '',
+      avoid: [],
+      rules: [
+        { scope: 'all' as const, text: '接口变更需要同步更新监控指标', source: 'human' as const },
+        { scope: 'all' as const, text: '核心视图加载时间小于 2 秒', source: 'human' as const },
+      ],
+      domainModel: '',
+      lessons: [],
     },
   },
 ]

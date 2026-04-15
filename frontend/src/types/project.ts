@@ -6,7 +6,15 @@ export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3'
 
 export type RequirementStatus = 'queued' | 'running' | 'blocked' | 'done'
 
-export type PipelineStepStatus = 'queued' | 'running' | 'blocked' | 'done'
+export type PipelineStepStatus =
+  | 'queued'
+  | 'running'
+  | 'blocked'
+  | 'done'
+  | 'pending_approval'          // 强制审批：必须人工批准后继续
+  | 'pending_advisory_approval' // 指挥官建议审批：可批准或标记"无需审批"
+
+export type RuleScope = 'all' | 'dev' | 'qa' | 'pm' | 'design' | 'architect'
 
 export interface TeamMember {
   id: string
@@ -15,10 +23,50 @@ export interface TeamMember {
   avatar: string
 }
 
+export interface TechItem {
+  name: string
+  version?: string
+  notes?: string
+}
+
+export interface AvoidItem {
+  item: string
+  reason?: string
+  useInstead?: string
+}
+
+export interface Rule {
+  scope: RuleScope
+  text: string
+  source: 'human' | 'agent'
+  lessonId?: string
+}
+
+export interface ContextLesson {
+  id: string
+  date: string
+  title: string
+  background: string
+  correctApproach: string
+  promotedToRule: boolean
+  scope?: RuleScope
+}
+
 export interface ProjectContext {
+  // 项目定位（所有 Agent 必读）
+  goal: string
+  targetUsers: string
+  // 层 1 — 技术事实
   industry: string
-  techStack: string[]
-  conventions: string[]
+  techStack: TechItem[]
+  // 层 2 — 架构决策
+  archSummary: string
+  avoid: AvoidItem[]
+  // 层 2+3 — 规范与领域规则
+  rules: Rule[]
+  domainModel: string
+  // 层 4 — 教训
+  lessons: ContextLesson[]
 }
 
 export interface EnvLink {
@@ -27,9 +75,9 @@ export interface EnvLink {
 }
 
 export interface ProjectSettings {
-  repository?: string      // 代码仓库地址
-  environments: EnvLink[]  // 多个环境地址
-  context: ProjectContext  // AI 项目上下文
+  repository?: string
+  environments: EnvLink[]
+  context: ProjectContext
 }
 
 export interface Project {
@@ -52,12 +100,14 @@ export interface PipelineStep {
   id: string
   name: string
   agentName: string
-  role?: string           // 角色职称，如 "产品经理"
-  commands?: string       // 命令链，如 "CP→VP→EP→CE"
+  role?: string
+  commands?: string
   status: PipelineStepStatus
   updatedAt: string
-  agentRole?: AgentRole        // 关联的 Agent 模板角色（用于工作流配置）
-  enabledCommands?: string[]  // 启用的命令子集；undefined 表示全部启用
+  agentRole?: AgentRole
+  enabledCommands?: string[]
+  requiresApproval?: boolean    // 配置阶段设定的强制审批标记
+  advisoryConcern?: string      // 指挥官建议性审批时的顾虑说明
 }
 
 export type StoryStatus = 'queued' | 'running' | 'blocked' | 'done'
@@ -80,9 +130,9 @@ export interface Requirement {
   priority: RequirementPriority
   status: RequirementStatus
   assigneeId: string
-  pipeline: PipelineStep[]   // req-level steps (需求拆解 phase)
-  stories: Story[]           // sub-stories split from this req (may run in parallel)
-  tokenUsage?: number        // cumulative token consumption across all agents
+  pipeline: PipelineStep[]
+  stories: Story[]
+  tokenUsage?: number
 }
 
 // ── Step Detail API ─────────────────────────────────────────────────────────
@@ -148,6 +198,8 @@ export interface ArtifactContentRequest {
   stepName: string
   reqTitle: string
   reqSummary: string
+  reqId?: string
+  stepId?: string
 }
 
 export interface ArtifactContentResponse {
@@ -156,6 +208,7 @@ export interface ArtifactContentResponse {
 }
 
 // ── Workflow Suggest API ────────────────────────────────────────────────────
+
 export interface WorkflowSuggestRequest {
   projectContext: ProjectContext
   reqTitle: string
@@ -168,4 +221,27 @@ export interface WorkflowSuggestResponse {
   suggestedAgentRoles: AgentRole[]
   confidence: 'high' | 'medium' | 'low'
   warnings: string[]
+}
+
+// ── Context Suggestions (Path B) ────────────────────────────────────────────
+
+export interface PendingSuggestion {
+  id: string
+  projectId: string
+  reqId: string
+  stepId: string
+  agentName: string
+  suggestion: ContextSuggestion
+  createdAt: number
+}
+
+export interface ContextSuggestion {
+  type: 'rule' | 'lesson'
+  scope: RuleScope
+  // rule fields
+  text?: string
+  // lesson fields
+  title?: string
+  background?: string
+  correctApproach?: string
 }

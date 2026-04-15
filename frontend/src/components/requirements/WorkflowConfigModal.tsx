@@ -118,6 +118,7 @@ const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
 interface StepState extends TemplateStep {
   enabled: boolean
   enabledCommands: string[]
+  requiresApproval: boolean
 }
 
 function templateToStepStates(template: WorkflowTemplate): StepState[] {
@@ -125,6 +126,7 @@ function templateToStepStates(template: WorkflowTemplate): StepState[] {
     ...s,
     enabled: true,
     enabledCommands: (AGENT_COMMANDS[s.agentRole] ?? []).map((c) => c.code),
+    requiresApproval: false,
   }))
 }
 
@@ -203,6 +205,13 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
     if (expandedStep === idx) setExpandedStep(null)
   }
 
+  // 切换审批标记
+  const toggleApproval = (idx: number) => {
+    setSteps((prev) =>
+      prev.map((s, i) => (i === idx ? { ...s, requiresApproval: !s.requiresApproval } : s)),
+    )
+  }
+
   // 切换单个命令
   const toggleCommand = (stepIdx: number, code: string) => {
     setSteps((prev) =>
@@ -238,6 +247,7 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
           updatedAt: '--:--',
           agentRole: s.agentRole,
           enabledCommands: s.enabledCommands,
+          requiresApproval: s.requiresApproval,
         }
       })
     onConfirm(pipeline)
@@ -459,6 +469,21 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
                           <span className="text-[10px] leading-tight text-[var(--text-3)]">
                             {step.name}
                           </span>
+
+                          {/* 审批开关 */}
+                          {step.enabled && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleApproval(idx) }}
+                              className={cn(
+                                'mt-2 self-start rounded border px-1.5 py-[2px] text-[8px] font-semibold leading-none transition-all',
+                                step.requiresApproval
+                                  ? 'border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.1)] text-[#ff9f0a]'
+                                  : 'border-[var(--border)] bg-transparent text-[var(--text-3)]',
+                              )}
+                            >
+                              {step.requiresApproval ? '需审批' : '自动'}
+                            </button>
+                          )}
 
                           {/* 命令链预览（与 FlowNode commands 字段对应）*/}
                           {step.enabled && cmds.length > 0 && (

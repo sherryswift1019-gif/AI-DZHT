@@ -6,7 +6,9 @@ from .models import (
     StepDetailRequest, StepDetailResponse,
     StepArtifact, StepLogLine, StepProgress, StepPlan, StepPlanCommand,
     ArtifactContentRequest, ArtifactContentResponse,
+    GenerateContextRequest, GenerateContextResponse,
 )
+from .context import assemble_context
 
 _client: AsyncOpenAI | None = None
 
@@ -43,8 +45,10 @@ agentRoles 可选值：analyst, pm, ux, architect, sm, dev, qa, quickdev, techwr
 
 def build_user_message(req: WorkflowSuggestRequest) -> str:
     ctx = req.projectContext
-    conventions = "\n".join(f"  - {c}" for c in ctx.conventions)
-    tech_stack = ", ".join(ctx.techStack)
+    rules = ctx.rules or []
+    conventions = "\n".join(f"  - {r.text if hasattr(r, 'text') else r}" for r in rules)
+    tech_items = ctx.techStack or []
+    tech_stack = ", ".join(t.name if hasattr(t, 'name') else t for t in tech_items)
     summary = req.reqSummary.strip() or "（无描述）"
     title = req.reqTitle.strip()[:200] or "（无标题）"
     summary = summary[:500]
@@ -52,7 +56,7 @@ def build_user_message(req: WorkflowSuggestRequest) -> str:
     return f"""项目上下文：
 - 行业：{ctx.industry}
 - 技术栈：{tech_stack}
-- 团队约定：
+- 团队规范：
 {conventions}
 
 需求信息：
@@ -211,7 +215,128 @@ async def get_step_detail(req: StepDetailRequest) -> StepDetailResponse:
     )
 
 
-# ── Artifact Content ──────────────────────────────────────────────────────────
+
+# ── Step Log Streaming ────────────────────────────────────────────────────────
+
+_AGENT_PERSONAS: dict[str, str] = {
+    "Mary":    "你是 Mary，战略商业分析师，擅长市场调研、竞品分析和商业报告撰写。",
+    "John":    "你是 John，产品经理，擅长需求分析、PRD 撰写和 Epic/Story 拆解。",
+    "Sally":   "你是 Sally，UX 设计师，擅长用户流程设计、线框稿和交互说明。",
+    "Winston": "你是 Winston，系统架构师，擅长技术选型、架构设计和 API 规范制定。",
+    "Bob":     "你是 Bob，Scrum Master，擅长迭代计划制定和 User Story 拆解。",
+    "Amelia":  "你是 Amelia，高级开发工程师，擅长功能代码实现和代码质量审查。",
+    "Quinn":   "你是 Quinn，QA 工程师，擅长自动化测试设计和缺陷分析。",
+    "Barry":   "你是 Barry，全栈快速开发工程师，擅长快速原型实现。",
+    "Paige":   "你是 Paige，技术文档专家，擅长接口文档、部署指南编写。",
+}
+
+_STREAM_LOG_SYSTEM = """{persona}
+
+你正在 AI 研发工厂平台中执行任务。
+步骤名称：{step_name}
+执行命令：{commands}
+
+请以如下日志格式逐行输出你的完整执行过程，每行一条日志，行与行之间不要空行。
+格式规则（严格遵守，每行以 [ 开头）：
+- [init] 初始化操作描述
+- [tool:<工具名>] 工具调用描述（工具名用英文：web_search/read_file/write_file/run_test/analyze/diagram 等）
+- [result] 上个工具的返回结果摘要
+- [analysis] 分析结论
+- [planning] 规划内容
+- [writing] 撰写进度
+- [code] 代码实现内容
+- [review] 审查结果
+- [fix] 修复操作
+- [output] ✓ 最终产出物列表（最后一行，必须有）
+
+要求：输出 8-12 条日志，内容具体真实，只输出日志行，不要有任何其他文字"""
+
+
+async def stream_step_log(
+    agent_name: str,
+    agent_role: str,
+    step_name: str,
+    commands: str,
+    req_title: str,
+    req_summary: str,
+):
+    """逐行 yield 真实 LLM 生成的执行日志。"""
+    persona = _AGENT_PERSONAS.get(agent_name, f"你是 {agent_name}，{agent_role or 'AI 助手'}。")
+    system = _STREAM_LOG_SYSTEM.format(
+        persona=persona, step_name=step_name, commands=commands or step_name
+    )
+    user_msg = f"需求标题：{req_title}\n需求描述：{req_summary or '（无）'}"
+
+    stream = await get_client().chat.completions.create(
+        model="gpt-4o",
+        max_tokens=900,
+        stream=True,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+
+    buffer = ""
+    async for chunk in stream:
+        delta = chunk.choices[0].delta.content or ""
+        buffer += delta
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            line = line.strip()
+            if line:
+                yield line
+
+    if buffer.strip():
+        yield buffer.strip()
+
+
+# ── Generate Context ──────────────────────────────────────────────────────────
+
+GENERATE_CONTEXT_SYSTEM = """你是 AI 研发工厂平台的项目上下文生成助手。
+根据项目名称和描述，生成适合该项目的上下文信息，必须以合法 JSON 格式输出，不要有多余文字。
+
+输出格式：
+{
+  "industry": "项目所在行业领域（简短，如：SaaS / 企业软件、AI / 智能化软件、电商 / 零售）",
+  "techStack": ["技术1", "技术2", ...],
+  "conventions": ["规范1", "规范2", ...]
+}
+
+techStack：推断最合适的 3-6 个技术，基于描述中的线索。
+conventions：生成 3-5 条适合该项目的研发规范，具体可操作。"""
+
+
+async def generate_context(req: GenerateContextRequest) -> GenerateContextResponse:
+    existing = req.existingContext or {}
+    user_msg = f"""项目名称：{req.name}
+项目描述：{req.description or "（无描述）"}
+代码仓库：{req.repository or "（未填写）"}
+已有上下文：{existing}
+
+请根据以上信息生成或补全项目上下文。"""
+
+    completion = await get_client().chat.completions.create(
+        model="gpt-4o",
+        max_tokens=512,
+        messages=[
+            {"role": "system", "content": GENERATE_CONTEXT_SYSTEM},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+
+    raw = (completion.choices[0].message.content or "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start == -1 or end == 0:
+        raise ValueError(f"模型未返回有效 JSON: {raw[:200]}")
+
+    data = json.loads(raw[start:end])
+    return GenerateContextResponse(
+        industry=data.get("industry", ""),
+        techStack=data.get("techStack", []),
+        conventions=data.get("conventions", []),
+    )
 
 ARTIFACT_CONTENT_SYSTEM = """你是 AI 研发工厂平台的产出物生成器。
 根据 Agent 信息和需求上下文，生成一份完整、专业的产出文档，用中文写作。
@@ -254,3 +379,94 @@ async def get_artifact_content(req: ArtifactContentRequest) -> ArtifactContentRe
         content=content,
         format="code" if is_code else "markdown",
     )
+
+
+# ── Worker Agent（真实执行，携带 assemble_context 注入）───────────────────────
+
+_WORKER_SYSTEM = """{persona}
+
+你正在执行需求「{req_title}」的步骤「{step_name}」（命令：{commands}）。
+
+{context_block}
+
+前序产出物摘要：
+{prev_summaries}
+
+请以合法 JSON 格式输出，包含两个字段：
+{{
+  "artifacts": [
+    {{
+      "name": "产出物名称",
+      "type": "document|code|design|report|plan|test",
+      "summary": "1-2句摘要",
+      "content": "完整 Markdown 或代码内容（500-1200字）"
+    }}
+  ],
+  "suggestedContextUpdates": [
+    {{
+      "type": "rule",
+      "scope": "all|dev|qa|pm|design|architect",
+      "text": "规范内容"
+    }},
+    {{
+      "type": "lesson",
+      "scope": "dev",
+      "title": "教训标题",
+      "background": "背景",
+      "correctApproach": "正确做法"
+    }}
+  ]
+}}
+
+artifacts 至少 1 个，与执行命令对应。suggestedContextUpdates 若无建议则为空数组。
+只输出 JSON，不要有任何其他文字。"""
+
+
+async def execute_worker_agent(
+    agent_name: str,
+    agent_role: str,
+    step_name: str,
+    commands: str,
+    req_title: str,
+    req_summary: str,
+    project_context: dict,
+    prev_artifact_summaries: str,
+) -> dict:
+    """执行 Worker Agent，返回 {artifacts: [...], suggestedContextUpdates: [...]}"""
+    persona = _AGENT_PERSONAS.get(agent_name, f"你是 {agent_name}，{agent_role or 'AI 助手'}。")
+    context_block = assemble_context(project_context, agent_name)
+
+    system = _WORKER_SYSTEM.format(
+        persona=persona,
+        req_title=req_title,
+        step_name=step_name,
+        commands=commands or step_name,
+        context_block=context_block,
+        prev_summaries=prev_artifact_summaries or "（无前序产出物）",
+    )
+    user_msg = f"需求描述：{req_summary or '（无）'}"
+
+    completion = await get_client().chat.completions.create(
+        model="gpt-4o",
+        max_tokens=2000,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+
+    raw = (completion.choices[0].message.content or "").strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # 降级：尝试提取第一个完整 JSON 对象
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        data = json.loads(raw[start:end]) if start >= 0 and end > 0 else {}
+
+    return {
+        "artifacts": data.get("artifacts", []),
+        "suggestedContextUpdates": data.get("suggestedContextUpdates", []),
+    }
+

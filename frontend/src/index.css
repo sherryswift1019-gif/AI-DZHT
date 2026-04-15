@@ -87,7 +87,7 @@
 
   --text-1:         #FFFFFF;
   --text-2:         #AEAEB2;
-  --text-3:         #48484A;
+  --text-3:         #636366;
 
   --shadow-sm:      0 1px 3px rgba(0,0,0,0.5);
   --shadow:         0 4px 16px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3);
@@ -156,3 +156,41 @@ button, a, [role="button"] {
               box-shadow 0.2s ease, color 0.2s ease,
               transform 0.15s ease, opacity 0.2s ease;
 }
+
+/* ════════════════════════════════════════════════════════
+   PIPELINE FLOWCHART — Sci-Fi Animations
+════════════════════════════════════════════════════════ */
+
+@keyframes flow-scan {
+  from { transform: translateX(-150%); }
+  to   { transform: translateX(250%); }
+}
+
+@keyframes flow-arrow-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
+/* Dot-grid background — auto-adapts to light/dark via var(--border) */
+.flow-grid-bg {
+  background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* ════════════════════════════════════════════════════════
+   ARTIFACT MARKDOWN RENDERER
+════════════════════════════════════════════════════════ */
+.artifact-md .md-h1 { font-size: 1.25rem; font-weight: 700; margin: 1.25rem 0 0.5rem; color: var(--text-1); }
+.artifact-md .md-h2 { font-size: 1.05rem; font-weight: 700; margin: 1.1rem 0 0.4rem; color: var(--text-1); border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; }
+.artifact-md .md-h3 { font-size: 0.9rem;  font-weight: 600; margin: 0.9rem 0 0.3rem; color: var(--text-1); }
+.artifact-md .md-p  { font-size: 0.8125rem; line-height: 1.7; margin: 0.5rem 0; color: var(--text-2); }
+.artifact-md .md-hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+.artifact-md .md-ul { margin: 0.5rem 0 0.5rem 1.25rem; list-style: disc; }
+.artifact-md .md-ul li { font-size: 0.8125rem; line-height: 1.6; color: var(--text-2); margin: 0.2rem 0; }
+.artifact-md .md-inline { font-family: monospace; font-size: 0.75rem; background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: #58a6ff; }
+.artifact-md .md-code { background: #0d1117; border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 1rem; margin: 0.75rem 0; overflow-x: auto; }
+.artifact-md .md-code code { font-family: monospace; font-size: 0.75rem; line-height: 1.6; color: #e6edf3; white-space: pre; }
+.artifact-md .md-table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.78rem; }
+.artifact-md .md-table tr:nth-child(even) { background: var(--bg-panel-2); }
+.artifact-md .md-table td { padding: 0.4rem 0.75rem; border: 1px solid var(--border); color: var(--text-2); vertical-align: top; }
+.artifact-md .md-table tr:first-child td { font-weight: 600; color: var(--text-1); background: var(--bg-panel-3); }

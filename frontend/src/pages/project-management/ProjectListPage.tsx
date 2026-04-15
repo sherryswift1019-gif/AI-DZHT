@@ -99,7 +99,7 @@ export function ProjectListPage() {
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined,
         budget: 0,
-        context: { industry: '', techStack: [], conventions: [] },
+        context: { goal: '', targetUsers: '', industry: '', techStack: [], archSummary: '', avoid: [], rules: [], domainModel: '', lessons: [] },
       },
       {
         onSuccess: () => {

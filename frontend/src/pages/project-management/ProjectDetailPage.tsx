@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Trash2, Play, Copy, Check, Loader2, AlertTriangle, Pencil, Settings } from 'lucide-react'
+import { Trash2, Play, Copy, Check, Loader2, AlertTriangle, Pencil, Settings, Package, FileText, X } from 'lucide-react'
 import { ProjectSettingsModal } from '@/components/project/ProjectSettingsModal'
 import { Badge } from '@/components/ui/Badge'
 import { WorkflowConfigModal } from '@/components/requirements/WorkflowConfigModal'
@@ -11,9 +11,12 @@ import {
   useCreateRequirement,
   usePatchRequirement,
   useDeleteRequirement,
+  useApproveStep,
+  useDismissAdvisory,
 } from '@/hooks/useRequirements'
 import { useProjectDetail } from '@/hooks/useProjects'
 import { useStepDetail } from '@/hooks/useStepDetail'
+import { useArtifactContent } from '@/hooks/useArtifactContent'
 import type {
   PipelineStep,
   PipelineStepStatus,
@@ -21,6 +24,8 @@ import type {
   RequirementPriority,
   RequirementStatus,
   StoryStatus,
+  StepArtifact,
+  StepDetailResponse,
 } from '@/types/project'
 import type { ProjectStatus } from '@/types/project'
 
@@ -66,6 +71,8 @@ export function ProjectDetailPage() {
   const createMutation = useCreateRequirement()
   const patchMutation = usePatchRequirement()
   const deleteMutation = useDeleteRequirement()
+  const approveStepMutation = useApproveStep()
+  const dismissAdvisoryMutation = useDismissAdvisory()
 
   const [openCreate, setOpenCreate] = useState(false)
   const [workflowOpen, setWorkflowOpen] = useState(false)
@@ -77,10 +84,19 @@ export function ProjectDetailPage() {
   const [reqFilter, setReqFilter] = useState<RequirementStatus | 'all'>('all')
   const [activeNode, setActiveNode] = useState<PipelineStep | null>(null)
   const { mutate: fetchStepDetail, data: stepDetail, isPending: isDetailLoading, reset: resetStepDetail } = useStepDetail()
+  const [stableDetail, setStableDetail] = useState<StepDetailResponse | undefined>(undefined)
+  const [streamLines, setStreamLines] = useState<Array<{ time: string; text: string }>>([])
+  const esRef = useRef<EventSource | null>(null)
   const [launchReqId, setLaunchReqId] = useState<string | null>(null)
   const [launchPromptText, setLaunchPromptText] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [launchCopied, setLaunchCopied] = useState(false)
+  const [dismissModalStep, setDismissModalStep] = useState<PipelineStep | null>(null)
+  const [dismissForm, setDismissForm] = useState({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
+  // log streaming is handled inside <LogStream> component
+  const [detailTab, setDetailTab] = useState<'flow' | 'artifacts'>('flow')
+  const [viewingArtifact, setViewingArtifact] = useState<{ step: PipelineStep; art: StepArtifact } | null>(null)
+  const { mutate: fetchArtifactContent, data: artifactContent, isPending: isArtifactLoading, reset: resetArtifactContent } = useArtifactContent()
   const [form, setForm] = useState<NewReqForm>({
     title: '',
     summary: '',
@@ -116,9 +132,27 @@ export function ProjectDetailPage() {
 
   const selectedReq = requirements.find((r) => r.id === selectedReqId) ?? null
 
-  // 点击流程节点时调用 API 获取详情
+  // stepDetail 非空时同步到 stableDetail（防止 mutation 轮询期间 data 变 undefined 闪烁）
   useEffect(() => {
-    if (!activeNode || !selectedReq) { resetStepDetail(); return }
+    if (stepDetail) setStableDetail(stepDetail)
+  }, [stepDetail])
+
+  // 点击流程节点时：重置状态 → 获取一次详情 → 若 running 则打开 SSE 流
+  useEffect(() => {
+    // 关闭上一个 EventSource
+    esRef.current?.close()
+    esRef.current = null
+    setStreamLines([])
+
+    if (!activeNode || !selectedReq) {
+      resetStepDetail()
+      setStableDetail(undefined)
+      return
+    }
+
+    setStableDetail(undefined)
+
+    // 获取一次步骤详情（summary / plan / artifacts / blockedReason）
     fetchStepDetail({
       agentName: activeNode.agentName,
       agentRole: activeNode.role ?? '',
@@ -128,7 +162,48 @@ export function ProjectDetailPage() {
       reqTitle: selectedReq.title,
       reqSummary: selectedReq.summary,
     })
+
+    // running 状态：打开 SSE 获取真实流式日志
+    if (activeNode.status === 'running') {
+      const params = new URLSearchParams({
+        agentName: activeNode.agentName,
+        agentRole: activeNode.role ?? '',
+        stepName: activeNode.name,
+        commands: activeNode.commands ?? '',
+        reqTitle: selectedReq.title,
+        reqSummary: selectedReq.summary,
+      })
+      const es = new EventSource(`/api/v1/steps/stream?${params}`)
+      es.onmessage = (e) => {
+        if (e.data === '[DONE]') { es.close(); return }
+        try {
+          const line = JSON.parse(e.data) as { time: string; text: string }
+          setStreamLines((prev) => [...prev, line])
+        } catch { /* ignore */ }
+      }
+      es.onerror = () => es.close()
+      esRef.current = es
+    }
   }, [activeNode?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!viewingArtifact || !selectedReq) { resetArtifactContent(); return }
+    fetchArtifactContent({
+      agentName: viewingArtifact.step.agentName,
+      agentRole: viewingArtifact.step.role ?? '',
+      artifactName: viewingArtifact.art.name,
+      artifactType: viewingArtifact.art.type,
+      stepName: viewingArtifact.step.name,
+      reqTitle: selectedReq.title,
+      reqSummary: selectedReq.summary,
+      reqId: selectedReq.id,
+      stepId: viewingArtifact.step.id,
+    })
+  }, [viewingArtifact]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setDetailTab('flow')
+  }, [selectedReqId])
 
   if (projectLoading) {
     return (
@@ -196,18 +271,29 @@ export function ProjectDetailPage() {
   }
 
   const startWorkflow = (reqId: string) => {
-    const req = requirements.find((r) => r.id === reqId)
-    if (!req) return
-    const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     patchMutation.mutate({
       projectId: project.id,
       reqId,
       status: 'running',
-      pipeline: req.pipeline.map((step, idx) =>
-        idx === 0 ? { ...step, status: 'running' as PipelineStepStatus, updatedAt: now } : step,
-      ),
     })
     setLaunchReqId(null)
+  }
+
+  const handleApproveStep = (reqId: string, stepId: string) => {
+    approveStepMutation.mutate({ projectId: project.id, reqId, stepId })
+  }
+
+  const handleDismissAdvisory = (reqId: string, stepId: string) => {
+    const { lessonTitle, correctApproach, background, promoteToRule } = dismissForm
+    dismissAdvisoryMutation.mutate(
+      { projectId: project.id, reqId, stepId, lessonTitle: lessonTitle || undefined, correctApproach: correctApproach || undefined, background: background || undefined, promoteToRule },
+      {
+        onSuccess: () => {
+          setDismissModalStep(null)
+          setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
+        },
+      },
+    )
   }
 
   return (
@@ -363,7 +449,11 @@ export function ProjectDetailPage() {
                                   ? 'animate-pulse bg-[#58a6ff]'
                                   : step.status === 'blocked'
                                     ? 'bg-[#f85149]'
-                                    : 'bg-[#30363d]',
+                                    : step.status === 'pending_approval'
+                                      ? 'animate-pulse bg-[#ff9f0a]'
+                                      : step.status === 'pending_advisory_approval'
+                                        ? 'animate-pulse bg-[#ffd60a]'
+                                        : 'bg-[#30363d]',
                             )}
                           />
                         ))}
@@ -477,8 +567,89 @@ export function ProjectDetailPage() {
                       </div>
                   </div>
 
+                  {/* Tab bar */}
+                  <div className="shrink-0 flex items-center border-b border-[var(--border)] px-5">
+                    {(['flow', 'artifacts'] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setDetailTab(tab)}
+                        className={cn(
+                          'flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-[11px] font-semibold transition-colors',
+                          detailTab === tab
+                            ? 'border-[var(--accent)] text-[var(--accent)]'
+                            : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-1)]',
+                        )}
+                      >
+                        {tab === 'flow' ? '流水线' : '产出物'}
+                        {tab === 'artifacts' && (() => {
+                          const n = [
+                            ...selectedReq.pipeline,
+                            ...selectedReq.stories.flatMap((s) => s.pipeline),
+                          ].filter((s) => s.status === 'done').length
+                          return n > 0 ? (
+                            <span className="rounded-full bg-[var(--accent-sub)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--accent)]">
+                              {n}
+                            </span>
+                          ) : null
+                        })()}
+                      </button>
+                    ))}
+                  </div>
+
                   {/* Flowchart body */}
+                  {detailTab === 'flow' && (
                   <div className="flex-1 overflow-auto p-5">
+                    {/* ── 审批 Banner ── */}
+                    {(() => {
+                      const pendingApproval = selectedReq.pipeline.find((s) => s.status === 'pending_approval')
+                      const pendingAdvisory = selectedReq.pipeline.find((s) => s.status === 'pending_advisory_approval')
+                      if (!pendingApproval && !pendingAdvisory) return null
+                      const step = (pendingApproval ?? pendingAdvisory)!
+                      const isMandatory = step.status === 'pending_approval'
+                      return (
+                        <div className={cn(
+                          'mb-4 rounded-xl border px-4 py-3 space-y-2',
+                          isMandatory
+                            ? 'border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.07)]'
+                            : 'border-[rgba(255,214,10,0.35)] bg-[rgba(255,214,10,0.05)]',
+                        )}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className={cn('text-[12px] font-semibold', isMandatory ? 'text-[#ff9f0a]' : 'text-[#ffd60a]')}>
+                                {isMandatory ? '强制审批：需要人工批准后继续' : '建议性审批：指挥官请求确认'}
+                              </p>
+                              <p className="text-[11px] text-[var(--text-2)] mt-0.5">
+                                步骤：{step.agentName} · {step.name}
+                              </p>
+                              {!isMandatory && step.advisoryConcern && (
+                                <p className="text-[11px] text-[var(--text-3)] mt-1">顾虑：{step.advisoryConcern}</p>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {!isMandatory && (
+                                <button
+                                  onClick={() => {
+                                    setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
+                                    setDismissModalStep(step)
+                                  }}
+                                  className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-semibold text-[var(--text-2)] hover:text-[var(--text-1)]"
+                                >
+                                  无需审批
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleApproveStep(selectedReq.id, step.id)}
+                                disabled={approveStepMutation.isPending}
+                                className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                              >
+                                {approveStepMutation.isPending ? <Loader2 size={10} className="animate-spin" /> : null}
+                                批准并继续
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     {/* ── Phase 1: req-level sequential nodes ── */}
                     {selectedReq.pipeline.length > 0 && (
                       <>
@@ -548,6 +719,57 @@ export function ProjectDetailPage() {
                       </div>
                     )}
                   </div>
+                  )}
+
+                  {/* 产出物 tab */}
+                  {detailTab === 'artifacts' && (
+                    <div className="flex-1 overflow-auto p-5 space-y-5">
+                      {(() => {
+                        const allSteps = [
+                          ...selectedReq.pipeline,
+                          ...selectedReq.stories.flatMap((s) => s.pipeline),
+                        ].filter((s) => s.status === 'done')
+                        if (allSteps.length === 0) {
+                          return (
+                            <div className="flex flex-col items-center gap-3 py-16 text-[var(--text-3)]">
+                              <Package size={28} strokeWidth={1.5} />
+                              <p className="text-xs">暂无产出物，Agent 完成步骤后将在此显示</p>
+                            </div>
+                          )
+                        }
+                        return allSteps.map((step) => {
+                          const arts = AGENT_ARTIFACTS_MAP[step.agentName] ?? []
+                          if (arts.length === 0) return null
+                          return (
+                            <div key={step.id}>
+                              <div className="mb-2 flex items-center gap-2">
+                                <span className="text-[13px]">{stageIcon(step.name)}</span>
+                                <span className="text-[11px] font-semibold text-[var(--text-1)]">{step.agentName}</span>
+                                {step.role && <span className="text-[10px] text-[var(--text-3)]">{step.role}</span>}
+                                <NodeStatusBadge status={step.status} />
+                              </div>
+                              <div className="space-y-1.5 pl-5">
+                                {arts.map((art) => (
+                                  <button
+                                    key={art.name}
+                                    onClick={() => setViewingArtifact({ step, art: { name: art.name, type: art.type, summary: '' } })}
+                                    className="flex w-full items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 py-2.5 text-left hover:border-[var(--accent)] transition-colors"
+                                  >
+                                    <span className="text-[13px]">{artifactIcon(art.type)}</span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[12px] font-semibold text-[var(--text-1)]">{art.name}</p>
+                                      <p className="text-[10px] text-[var(--text-3)]">{art.type}</p>
+                                    </div>
+                                    <FileText size={12} className="shrink-0 text-[var(--text-3)]" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })
+                      })()}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex flex-1 items-center justify-center">
@@ -595,28 +817,28 @@ export function ProjectDetailPage() {
 
             {/* ── Body ── */}
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {/* 加载中 */}
-              {isDetailLoading && (
+              {/* 初次加载中（stableDetail 尚不存在） */}
+              {isDetailLoading && !stableDetail && (
                 <div className="flex flex-col items-center gap-3 py-10 text-[var(--text-3)]">
                   <Loader2 size={20} className="animate-spin text-[var(--accent)]" />
                   <span className="text-xs">正在分析步骤详情…</span>
                 </div>
               )}
 
-              {/* 加载完成 */}
-              {!isDetailLoading && stepDetail && (
+              {/* 详情内容（stableDetail 在轮询期间保持稳定，不会闪烁） */}
+              {stableDetail && (
                 <div className="space-y-5">
                   {/* summary */}
-                  <p className="text-[12px] leading-relaxed text-[var(--text-2)]">{stepDetail.summary}</p>
+                  <p className="text-[12px] leading-relaxed text-[var(--text-2)]">{stableDetail.summary}</p>
 
                   {/* ── queued: 执行计划 ── */}
-                  {stepDetail.plan && (
+                  {stableDetail.plan && (
                     <div className="space-y-3">
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">执行计划</p>
-                      <p className="text-[12px] leading-relaxed text-[var(--text-2)]">{stepDetail.plan.description}</p>
-                      {stepDetail.plan.commandDetails.length > 0 && (
+                      <p className="text-[12px] leading-relaxed text-[var(--text-2)]">{stableDetail.plan.description}</p>
+                      {stableDetail.plan.commandDetails.length > 0 && (
                         <div className="space-y-1.5">
-                          {stepDetail.plan.commandDetails.map((cmd, i) => (
+                          {stableDetail.plan.commandDetails.map((cmd, i) => (
                             <div key={cmd.code} className="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 py-2.5">
                               <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[var(--bg-panel-3)] font-mono text-[9px] font-bold text-[var(--text-3)]">{i + 1}</span>
                               <div className="min-w-0 flex-1">
@@ -632,88 +854,73 @@ export function ProjectDetailPage() {
                       )}
                       <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-3)]">
                         <span>预计耗时</span>
-                        <span className="font-semibold text-[var(--text-2)]">约 {stepDetail.plan.estimatedMinutes} 分钟</span>
+                        <span className="font-semibold text-[var(--text-2)]">约 {stableDetail.plan.estimatedMinutes} 分钟</span>
                       </div>
                     </div>
                   )}
 
-                  {/* ── running: 执行进度 ── */}
-                  {stepDetail.progress && (
-                    <div className="space-y-3">
-                      {/* 当前命令 */}
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">当前执行</p>
-                        <div className="flex items-center gap-2 rounded-xl border border-[rgba(88,166,255,0.3)] bg-[rgba(88,166,255,0.06)] px-3 py-2">
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#58a6ff]" />
-                          <span className="font-mono text-[12px] font-bold text-[#58a6ff]">{stepDetail.progress.currentCommand}</span>
-                          <span className="text-[11px] text-[var(--text-3)]">· 进行中</span>
-                          <span className="ml-auto text-[10px] text-[var(--text-3)]">开始于 {stepDetail.progress.startedAt}</span>
-                        </div>
+                  {/* ── running: 实时日志流 ── */}
+                  {activeNode.status === 'running' && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">执行日志</p>
+                        <span className="flex items-center gap-1 rounded-full border border-[rgba(88,166,255,0.3)] bg-[rgba(88,166,255,0.07)] px-2 py-0.5 font-mono text-[9px] font-bold text-[#58a6ff]">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#58a6ff] opacity-60" />
+                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#58a6ff]" />
+                          </span>
+                          LIVE
+                        </span>
                       </div>
-                      {/* 日志 */}
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">执行日志</p>
-                        <div className="rounded-xl border border-[var(--border)] bg-[#0d1117] px-3 py-2.5 space-y-1 font-mono max-h-[160px] overflow-y-auto">
-                          {stepDetail.progress.logLines.map((line, i) => {
-                            const isLast = i === stepDetail.progress!.logLines.length - 1
-                            return (
-                              <div key={i} className="flex items-start gap-2 text-[10px] leading-relaxed">
-                                <span className="shrink-0 text-[var(--text-3)]">{line.time}</span>
-                                <span className={isLast ? 'text-[#58a6ff]' : 'text-[#8b949e]'}>{line.text}</span>
-                                {isLast && <span className="animate-pulse text-[#58a6ff]">▌</span>}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-3)]">
-                        <span>预计剩余</span>
-                        <span className="font-semibold text-[#58a6ff]">约 {stepDetail.progress.estimatedRemainingMinutes} 分钟</span>
-                      </div>
+                      <LogStream lines={streamLines} />
                     </div>
                   )}
 
                   {/* ── done: 产出物 ── */}
-                  {stepDetail.artifacts && (
+                  {stableDetail.artifacts && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">产出物</p>
-                        {stepDetail.duration && (
+                        {stableDetail.duration && (
                           <span className="rounded-full border border-[rgba(63,185,80,0.3)] bg-[rgba(63,185,80,0.1)] px-2 py-0.5 text-[10px] font-semibold text-[#3fb950]">
-                            {stepDetail.duration}
+                            {stableDetail.duration}
                           </span>
                         )}
                       </div>
                       <div className="space-y-2">
-                        {stepDetail.artifacts.map((art) => (
-                          <div key={art.name} className="rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 py-2.5">
+                        {stableDetail.artifacts.map((art) => (
+                          <button
+                            key={art.name}
+                            onClick={() => setViewingArtifact({ step: activeNode!, art })}
+                            className="flex w-full flex-col rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 py-2.5 text-left hover:border-[var(--accent)] transition-colors"
+                          >
                             <div className="flex items-center gap-2">
                               <span className="text-[13px]">{artifactIcon(art.type)}</span>
                               <span className="text-[12px] font-semibold text-[var(--text-1)]">{art.name}</span>
-                              <span className="ml-auto rounded border border-[var(--border)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-3)]">{art.type}</span>
+                              <span className="rounded border border-[var(--border)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-3)]">{art.type}</span>
                             </div>
                             <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-2)]">{art.summary}</p>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
                   )}
 
                   {/* ── blocked: 阻塞原因 ── */}
-                  {stepDetail.blockedReason && (
+                  {stableDetail.blockedReason && (
                     <div className="rounded-xl border border-[rgba(248,81,73,0.3)] bg-[rgba(248,81,73,0.06)] px-4 py-3 space-y-1.5">
                       <div className="flex items-center gap-2 text-[#f85149]">
                         <AlertTriangle size={13} />
                         <span className="text-[12px] font-semibold">阻塞原因</span>
                       </div>
-                      <p className="text-[12px] leading-relaxed text-[var(--text-2)]">{stepDetail.blockedReason}</p>
+                      <p className="text-[12px] leading-relaxed text-[var(--text-2)]">{stableDetail.blockedReason}</p>
                     </div>
                   )}
                 </div>
               )}
 
               {/* 加载失败时降级到静态内容 */}
-              {!isDetailLoading && !stepDetail && (
+              {!isDetailLoading && !stableDetail && (
                 <div className="space-y-4">
                   <p className="text-[12px] leading-relaxed text-[var(--text-2)]">{getStepDetail(activeNode).desc}</p>
                   {activeNode.commands && (
@@ -1055,8 +1262,129 @@ export function ProjectDetailPage() {
         )
       })()}
 
-      {/* ── Step 2: 工作流配置 Modal — key 确保每次打开都是全新状态 */}
-      <WorkflowConfigModal
+      {/* ── 产出物内容 Modal ── */}
+      {viewingArtifact && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setViewingArtifact(null)}
+        >
+          <div
+            className="flex w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)]"
+            style={{ maxHeight: '88vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[15px]">{artifactIcon(viewingArtifact.art.type)}</span>
+                <div>
+                  <p className="text-[13px] font-bold text-[var(--text-1)]">{viewingArtifact.art.name}</p>
+                  <p className="text-[10px] text-[var(--text-3)]">
+                    {viewingArtifact.step.agentName}
+                    {viewingArtifact.step.role && ` · ${viewingArtifact.step.role}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingArtifact(null)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-3)] hover:bg-[var(--bg-panel-2)] hover:text-[var(--text-1)]"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              {isArtifactLoading && (
+                <div className="flex flex-col items-center gap-3 py-10 text-[var(--text-3)]">
+                  <Loader2 size={20} className="animate-spin text-[var(--accent)]" />
+                  <span className="text-xs">正在生成产出物内容…</span>
+                </div>
+              )}
+              {!isArtifactLoading && artifactContent && (
+                <div className="artifact-md">
+                  {renderMarkdown(artifactContent.content)}
+                </div>
+              )}
+              {!isArtifactLoading && !artifactContent && (
+                <div className="flex flex-col items-center gap-3 py-10 text-[var(--text-3)]">
+                  <FileText size={24} strokeWidth={1.5} />
+                  <span className="text-xs">内容加载失败，请重试</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 驳回建议性审批 Modal ── */}
+      {dismissModalStep && selectedReq && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setDismissModalStep(null)}
+        >
+          <div
+            className="w-full max-w-[480px] rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
+              <div>
+                <p className="text-[11px] text-[var(--text-3)]">驳回建议性审批</p>
+                <h3 className="mt-0.5 text-sm font-semibold text-[var(--text-1)]">
+                  {dismissModalStep.agentName} · {dismissModalStep.name}
+                </h3>
+              </div>
+              <button onClick={() => setDismissModalStep(null)} className="text-[18px] text-[var(--text-3)] hover:text-[var(--text-1)]">×</button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <p className="text-[11px] text-[var(--text-3)]">可选：录入教训，帮助指挥官下次做出更好的判断</p>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium text-[var(--text-2)]">教训标题</label>
+                <input
+                  value={dismissForm.lessonTitle}
+                  onChange={(e) => setDismissForm((p) => ({ ...p, lessonTitle: e.target.value }))}
+                  placeholder="例：不要对标准 CRUD 请求触发审批"
+                  className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 text-xs text-[var(--text-1)] outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium text-[var(--text-2)]">正确做法</label>
+                <textarea
+                  value={dismissForm.correctApproach}
+                  onChange={(e) => setDismissForm((p) => ({ ...p, correctApproach: e.target.value }))}
+                  placeholder="例：常规接口开发无需审批，直接执行即可"
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 py-2 text-xs text-[var(--text-1)] outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={dismissForm.promoteToRule}
+                  onChange={(e) => setDismissForm((p) => ({ ...p, promoteToRule: e.target.checked }))}
+                  className="h-3.5 w-3.5 rounded accent-[var(--accent)]"
+                />
+                <span className="text-[11px] text-[var(--text-2)]">固化为规则（指挥官将来严格遵守）</span>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-3">
+              <button
+                onClick={() => setDismissModalStep(null)}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-2)]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleDismissAdvisory(selectedReq.id, dismissModalStep.id)}
+                disabled={dismissAdvisoryMutation.isPending}
+                className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {dismissAdvisoryMutation.isPending ? <Loader2 size={10} className="animate-spin" /> : null}
+                确认驳回并继续
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: 工作流配置 Modal — key 确保每次打开都是全新状态 */}      <WorkflowConfigModal
         key={pendingForm?.title ?? ''}
         open={workflowOpen}
         reqTitle={pendingForm?.title ?? ''}
@@ -1089,10 +1417,12 @@ function InputField({ label, required, children }: { label: string; required?: b
 
 function FlowNode({ step, isActive, onClick }: { step: PipelineStep; isActive: boolean; onClick: () => void }) {
   const cls =
-    step.status === 'done'    ? 'border-[#30363d] bg-[#0d1117]' :
-    step.status === 'running' ? 'border-[rgba(88,166,255,0.55)] bg-[rgba(88,166,255,0.06)] shadow-[0_0_12px_rgba(88,166,255,0.18)]' :
-    step.status === 'blocked' ? 'border-[rgba(248,81,73,0.55)] bg-[rgba(248,81,73,0.06)]' :
-                                'border-[#21262d] bg-[#0d1117] opacity-55'
+    step.status === 'done'                     ? 'border-[#30363d] bg-[#0d1117]' :
+    step.status === 'running'                  ? 'border-[rgba(88,166,255,0.55)] bg-[rgba(88,166,255,0.06)] shadow-[0_0_12px_rgba(88,166,255,0.18)]' :
+    step.status === 'blocked'                  ? 'border-[rgba(248,81,73,0.55)] bg-[rgba(248,81,73,0.06)]' :
+    step.status === 'pending_approval'         ? 'border-[rgba(255,159,10,0.55)] bg-[rgba(255,159,10,0.06)] shadow-[0_0_10px_rgba(255,159,10,0.15)]' :
+    step.status === 'pending_advisory_approval'? 'border-[rgba(255,214,10,0.5)] bg-[rgba(255,214,10,0.05)]' :
+                                                 'border-[#21262d] bg-[#0d1117] opacity-55'
   return (
     <button
       onClick={onClick}
@@ -1104,6 +1434,12 @@ function FlowNode({ step, isActive, onClick }: { step: PipelineStep; isActive: b
     >
       {step.status === 'running' && (
         <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-xl bg-[linear-gradient(90deg,transparent,#58a6ff,transparent)]" />
+      )}
+      {step.status === 'pending_approval' && (
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-xl bg-[linear-gradient(90deg,transparent,#ff9f0a,transparent)]" />
+      )}
+      {step.status === 'pending_advisory_approval' && (
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-xl bg-[linear-gradient(90deg,transparent,#ffd60a,transparent)]" />
       )}
       {/* Agent name + status */}
       <div className="mb-1.5 flex items-start justify-between gap-1">
@@ -1136,10 +1472,12 @@ function NodeArrow({ done = false }: { done?: boolean }) {
 
 function NodeStatusBadge({ status }: { status: PipelineStepStatus | StoryStatus }) {
   const map: Record<string, { label: string; cls: string }> = {
-    done:    { label: '已完成', cls: 'text-[#3fb950] border-[rgba(63,185,80,0.3)]  bg-[rgba(63,185,80,0.1)]' },
-    running: { label: '进行中', cls: 'text-[#58a6ff] border-[rgba(88,166,255,0.3)] bg-[rgba(88,166,255,0.1)]' },
-    blocked: { label: '阻塞',   cls: 'text-[#f85149] border-[rgba(248,81,73,0.3)]  bg-[rgba(248,81,73,0.1)]' },
-    queued:  { label: '未开始', cls: 'text-[var(--text-3)] border-[var(--border)] bg-transparent' },
+    done:                      { label: '已完成', cls: 'text-[#3fb950] border-[rgba(63,185,80,0.3)]  bg-[rgba(63,185,80,0.1)]' },
+    running:                   { label: '进行中', cls: 'text-[#58a6ff] border-[rgba(88,166,255,0.3)] bg-[rgba(88,166,255,0.1)]' },
+    blocked:                   { label: '阻塞',   cls: 'text-[#f85149] border-[rgba(248,81,73,0.3)]  bg-[rgba(248,81,73,0.1)]' },
+    queued:                    { label: '未开始', cls: 'text-[var(--text-3)] border-[var(--border)] bg-transparent' },
+    pending_approval:          { label: '待审批', cls: 'text-[#ff9f0a] border-[rgba(255,159,10,0.35)] bg-[rgba(255,159,10,0.1)]' },
+    pending_advisory_approval: { label: '建议审批', cls: 'text-[#ffd60a] border-[rgba(255,214,10,0.3)] bg-[rgba(255,214,10,0.08)]' },
   }
   const { label, cls } = map[status] ?? map['queued']
   return (
@@ -1227,6 +1565,202 @@ function StatChip({ label, value, color }: { label: string; value: number; color
     </div>
   )
 }
+
+const AGENT_ARTIFACTS_MAP: Record<string, Array<{ name: string; type: StepArtifact['type'] }>> = {
+  Mary:    [{ name: '商业简报', type: 'report' }, { name: '竞品分析报告', type: 'report' }, { name: '项目背景文档', type: 'document' }],
+  John:    [{ name: '产品需求文档（PRD）', type: 'document' }, { name: '产品愿景说明', type: 'document' }, { name: 'Epic 列表', type: 'plan' }],
+  Sally:   [{ name: 'UI/UX 设计文档', type: 'design' }],
+  Winston: [{ name: '架构设计文档', type: 'document' }],
+  Bob:     [{ name: 'Sprint 计划', type: 'plan' }, { name: 'User Story 列表', type: 'plan' }],
+  Amelia:  [{ name: '功能代码实现', type: 'code' }],
+  Quinn:   [{ name: '自动化测试报告', type: 'test' }, { name: '代码评审报告', type: 'report' }],
+  Barry:   [{ name: '快速开发产物', type: 'code' }],
+  Paige:   [{ name: '技术文档', type: 'document' }],
+}
+
+function renderMarkdown(md: string): React.ReactNode {
+  const lines = md.split('\n')
+  const nodes: React.ReactNode[] = []
+  lines.forEach((line, i) => {
+    if (line.startsWith('### ')) {
+      nodes.push(<h3 key={i} className="mt-4 mb-1.5 text-[13px] font-bold text-[var(--text-1)]">{line.slice(4)}</h3>)
+    } else if (line.startsWith('## ')) {
+      nodes.push(<h2 key={i} className="mt-5 mb-2 text-[14px] font-bold text-[var(--text-1)]">{line.slice(3)}</h2>)
+    } else if (line.startsWith('# ')) {
+      nodes.push(<h1 key={i} className="mt-6 mb-2 text-[15px] font-bold text-[var(--text-1)]">{line.slice(2)}</h1>)
+    } else if (line.startsWith('---')) {
+      nodes.push(<hr key={i} className="my-3 border-[var(--border)]" />)
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      nodes.push(<li key={i} className="ml-4 list-disc text-[12px] text-[var(--text-2)]">{line.slice(2)}</li>)
+    } else if (line.trim() === '') {
+      nodes.push(<div key={i} className="h-2" />)
+    } else {
+      nodes.push(<p key={i} className="text-[12px] leading-relaxed text-[var(--text-2)]">{line}</p>)
+    }
+  })
+  return <>{nodes}</>
+}
+
+
+// ── LogStream (Claude 终端风格：结构化行块 + spinner + 可展开 tool result) ─────
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+const LOG_TAG_COLOR: Record<string, string> = {
+  init:     '#6e7681',
+  analysis: '#79c0ff',
+  writing:  '#79c0ff',
+  planning: '#a5d6ff',
+  design:   '#79c0ff',
+  code:     '#79c0ff',
+  review:   '#8b949e',
+  decision: '#e3b341',
+  output:   '#3fb950',
+}
+
+type LogGroup = {
+  id: number
+  tag: string
+  content: string
+  detail?: string
+  isOutput: boolean
+  isFix: boolean
+}
+
+function buildLogGroups(lines: Array<{ time: string; text: string }>): LogGroup[] {
+  const groups: LogGroup[] = []
+  let id = 0
+  for (const line of lines) {
+    const text = line.text
+    const m = text.match(/^\[([^\]]+)\]\s*(.*)$/)
+    if (!m) {
+      groups.push({ id: id++, tag: '', content: text, isOutput: text.includes('✓'), isFix: false })
+      continue
+    }
+    const [, tag, content] = m
+    if (tag === 'result') {
+      const last = groups[groups.length - 1]
+      if (last?.tag.startsWith('tool:')) { last.detail = content; continue }
+    }
+    groups.push({
+      id: id++, tag, content,
+      isOutput: tag === 'output',
+      isFix: tag === 'fix' || tag === 'debug',
+    })
+  }
+  return groups
+}
+
+const LogStream = React.memo(function LogStream({
+  lines,
+}: {
+  lines: Array<{ time: string; text: string }>
+}) {
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const [spinnerFrame, setSpinnerFrame] = React.useState(0)
+  const [expandedIds, setExpandedIds]   = React.useState<Set<number>>(new Set())
+
+  // Spinner 帧动画（80ms/帧）
+  React.useEffect(() => {
+    const id = setInterval(() => setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length), 80)
+    return () => clearInterval(id)
+  }, [])
+
+  // 新行出现时自动滚到底部
+  React.useEffect(() => {
+    const el = containerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [lines])
+
+  const groups = buildLogGroups(lines)
+
+  const toggle = (gid: number) =>
+    setExpandedIds((prev) => { const s = new Set(prev); s.has(gid) ? s.delete(gid) : s.add(gid); return s })
+
+  return (
+    <div
+      ref={containerRef}
+      className="rounded-xl border border-[var(--border)] bg-[#0d1117] px-3 py-2.5 font-mono h-[260px] overflow-y-auto"
+    >
+      {groups.length === 0 ? (
+        <div className="flex items-center gap-1.5 py-1 text-[10px] text-[#3d444d]">
+          <span className="animate-pulse text-[#58a6ff]">▌</span>
+          <span>connecting...</span>
+        </div>
+      ) : (
+        <div>
+          {groups.map((g, idx) => {
+            const isLast    = idx === groups.length - 1
+            const isRunning = isLast && !g.isOutput
+            const isTool    = g.tag.startsWith('tool:')
+            const toolName  = isTool ? g.tag.slice(5) : null
+            const hasDetail = isTool && !!g.detail
+            const isExpanded = expandedIds.has(g.id)
+
+            const tagColor = g.isFix ? '#f0883e'
+              : g.isOutput ? '#3fb950'
+              : isTool ? '#79c0ff'
+              : LOG_TAG_COLOR[g.tag] ?? '#6e7681'
+
+            const titleColor = isRunning ? '#e6edf3'
+              : g.isOutput ? '#3fb950'
+              : g.isFix ? '#f0883e'
+              : '#6e7681'
+
+            const statusIcon = isRunning
+              ? <span style={{ color: '#58a6ff' }}>{SPINNER_FRAMES[spinnerFrame]}</span>
+              : g.isOutput
+              ? <span style={{ color: '#3fb950' }}>✓</span>
+              : <span style={{ color: '#3d444d' }}>✓</span>
+
+            return (
+              <div key={g.id} className="py-[3px]">
+                {/* 主行 */}
+                <div
+                  className={`flex items-start gap-1.5 text-[11px] leading-relaxed select-none ${hasDetail ? 'cursor-pointer hover:bg-[rgba(255,255,255,0.03)] rounded px-0.5' : ''}`}
+                  onClick={hasDetail ? () => toggle(g.id) : undefined}
+                >
+                  {/* 状态图标 */}
+                  <span className="w-3.5 shrink-0 text-[12px]">{statusIcon}</span>
+
+                  {/* Tag 标签 */}
+                  {g.tag && (
+                    <span className="shrink-0 w-[72px] text-[10px] font-bold truncate" style={{ color: tagColor }}>
+                      {toolName ?? g.tag}
+                    </span>
+                  )}
+
+                  {/* 分隔符 */}
+                  {g.tag && <span className="shrink-0 text-[#3d444d]">·</span>}
+
+                  {/* 内容 */}
+                  <span className="flex-1 min-w-0 break-words" style={{ color: titleColor }}>
+                    {g.content}
+                    {isRunning && <span className="ml-0.5 text-[#58a6ff]">▌</span>}
+                  </span>
+
+                  {/* 展开箭头 */}
+                  {hasDetail && (
+                    <span className="shrink-0 text-[9px] text-[#3d444d] ml-1">
+                      {isExpanded ? '▴' : '▾'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Tool result 展开内容 */}
+                {hasDetail && isExpanded && (
+                  <div className="ml-5 mt-0.5 mb-1 pl-2.5 border-l-2 border-[#21262d] text-[10px] leading-relaxed" style={{ color: '#6e7681' }}>
+                    {g.detail}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+})
 
 // defaultPipeline kept for reference — pipeline is now built by WorkflowConfigModal
 export function defaultPipeline(): PipelineStep[] {

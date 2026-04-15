@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import { Plus, Trash2, X, Sparkles, ChevronDown, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { mockMembers } from '@/mocks/data/projects'
-import type { EnvLink, Project, ProjectContext, ProjectSettings, ProjectStatus } from '@/types/project'
+import type { ContextLesson, EnvLink, Project, ProjectContext, ProjectSettings, ProjectStatus } from '@/types/project'
 import { usePatchProject } from '@/hooks/useProjects'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'basic' | 'environments' | 'context'
+type Tab = 'basic' | 'environments' | 'context' | 'lessons'
 
 type BasicForm = {
   name: string
@@ -19,12 +19,29 @@ type BasicForm = {
   color: string
 }
 
+type LessonDraft = {
+  date: string
+  title: string
+  background: string
+  correctApproach: string
+  promotedToRule: boolean
+}
+
+const emptyDraft = (): LessonDraft => ({
+  date: new Date().toISOString().slice(0, 10),
+  title: '',
+  background: '',
+  correctApproach: '',
+  promotedToRule: false,
+})
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'basic', label: '基本信息' },
   { key: 'environments', label: '环境配置' },
   { key: 'context', label: '项目上下文' },
+  { key: 'lessons', label: '历史教训' },
 ]
 
 const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
@@ -67,21 +84,34 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
     project.settings?.context ?? project.context ?? { industry: '', techStack: [], conventions: [] },
   )
   const [techStackRaw, setTechStackRaw] = useState(
-    (project.settings?.context ?? project.context)?.techStack.join(', ') ?? '',
+    (project.settings?.context ?? project.context)?.techStack.map((t) => typeof t === 'string' ? t : t.name).join(', ') ?? '',
   )
   const [conventionsRaw, setConventionsRaw] = useState(
-    (project.settings?.context ?? project.context)?.conventions.join('\n') ?? '',
+    (project.settings?.context ?? project.context)?.rules?.map((r) => typeof r === 'string' ? r : r.text).join('\n') ?? '',
   )
+
+  // Lessons state
+  const [lessons, setLessons] = useState<ContextLesson[]>(
+    project.settings?.context?.lessons ?? project.context.lessons ?? [],
+  )
+  const [addingLesson, setAddingLesson] = useState(false)
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null)
+  const [expandedLessonId, setExpandedLessonId] = useState<string | null>(null)
+  const [lessonDraft, setLessonDraft] = useState<LessonDraft>(emptyDraft())
+  const [isGenerating, setIsGenerating] = useState(false)
 
   // Reset when project changes
   useEffect(() => {
     setBasic(toBasicForm(project))
     setRepository(project.settings?.repository ?? '')
     setEnvLinks(project.settings?.environments ?? [])
-    const ctx = project.settings?.context ?? project.context ?? { industry: '', techStack: [], conventions: [] }
+    const ctx = project.settings?.context ?? project.context ?? { industry: '', techStack: [], rules: [] }
     setContext(ctx)
-    setTechStackRaw(ctx.techStack.join(', '))
-    setConventionsRaw(ctx.conventions.join('\n'))
+    setTechStackRaw(ctx.techStack.map((t) => typeof t === 'string' ? t : t.name).join(', '))
+    setConventionsRaw(ctx.rules?.map((r) => typeof r === 'string' ? r : r.text).join('\n') ?? '')
+    setLessons(ctx.lessons ?? [])
+    setAddingLesson(false)
+    setEditingLessonId(null)
   }, [project.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null
@@ -95,14 +125,78 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
 
   const removeEnv = (idx: number) =>
     setEnvLinks((prev) => prev.filter((_, i) => i !== idx))
+  // ── AI Generate Context ─────────────────────────────────────────────────────
 
+  const handleGenerateContext = async () => {
+    setIsGenerating(true)
+    try {
+      const res = await fetch('/api/v1/projects/generate-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: basic.name || project.name,
+          description: basic.description || project.description,
+          repository: repository.trim() || project.settings?.repository || undefined,
+          existingContext: {
+            industry: context.industry,
+            techStack: techStackRaw.split(',').map((s) => s.trim()).filter(Boolean).map((name) => ({ name })),
+            rules: conventionsRaw.split('\n').map((s) => s.trim()).filter(Boolean).map((text) => ({ scope: 'all', text, source: 'human' })),
+          },
+        }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setContext((p) => ({ ...p, industry: data.industry }))
+      setTechStackRaw(
+        Array.isArray(data.techStack)
+          ? data.techStack.map((t: unknown) => (typeof t === 'string' ? t : (t as { name: string }).name)).join(', ')
+          : '',
+      )
+      setConventionsRaw(
+        Array.isArray(data.conventions)
+          ? data.conventions.join('\n')
+          : Array.isArray(data.rules)
+            ? data.rules.map((r: unknown) => (typeof r === 'string' ? r : (r as { text: string }).text)).join('\n')
+            : '',
+      )
+    } catch (e) {
+      console.error('AI 生成上下文失败', e)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  // ── Lesson Helpers ────────────────────────────────────────────────────────
+
+  const handleAddLesson = () => {
+    if (!lessonDraft.title.trim()) return
+    const newLesson: ContextLesson = { id: `lesson-${Date.now()}`, ...lessonDraft }
+    setLessons((prev) => [newLesson, ...prev])
+    if (lessonDraft.promotedToRule && lessonDraft.correctApproach.trim()) {
+      const ruleText = `[教训] ${lessonDraft.title}：${lessonDraft.correctApproach.trim()}`
+      setConventionsRaw((prev) => (prev ? `${prev}\n${ruleText}` : ruleText))
+    }
+    setAddingLesson(false)
+    setLessonDraft(emptyDraft())
+  }
+
+  const handleSaveEditLesson = (id: string) => {
+    setLessons((prev) => prev.map((l) => (l.id === id ? { ...l, ...lessonDraft } : l)))
+    setEditingLessonId(null)
+  }
   // ── Save ─────────────────────────────────────────────────────────────────────
 
   const handleSave = () => {
     const mergedContext: ProjectContext = {
+      goal: context.goal ?? '',
+      targetUsers: context.targetUsers ?? '',
       industry: context.industry,
-      techStack: techStackRaw.split(',').map((s) => s.trim()).filter(Boolean),
-      conventions: conventionsRaw.split('\n').map((s) => s.trim()).filter(Boolean),
+      techStack: techStackRaw.split(',').map((s) => s.trim()).filter(Boolean).map((name) => ({ name })),
+      archSummary: context.archSummary ?? '',
+      avoid: context.avoid ?? [],
+      rules: conventionsRaw.split('\n').map((s) => s.trim()).filter(Boolean).map((text) => ({ scope: 'all' as const, text, source: 'human' as const })),
+      domainModel: context.domainModel ?? '',
+      lessons,
     }
 
     const settings: ProjectSettings = {
@@ -306,8 +400,19 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
           {/* ── Tab: 项目上下文 ── */}
           {activeTab === 'context' && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-[rgba(10,132,255,0.2)] bg-[var(--accent-sub)] px-3.5 py-3 text-xs text-[var(--accent)]">
-                项目上下文会作为 AI 对话时的参考背景，让 Agent 更精准地理解你的项目特点。
+              <div className="flex items-start justify-between gap-3 rounded-xl border border-[rgba(10,132,255,0.2)] bg-[var(--accent-sub)] px-3.5 py-3">
+                <p className="text-xs leading-relaxed text-[var(--accent)]">
+                  项目上下文会作为 AI 对话时的参考背景，让 Agent 更精准地理解你的项目特点。
+                </p>
+                <button
+                  type="button"
+                  onClick={handleGenerateContext}
+                  disabled={isGenerating}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[rgba(10,132,255,0.35)] bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                >
+                  <Sparkles size={11} className={isGenerating ? 'animate-spin' : ''} />
+                  {isGenerating ? 'AI 生成中...' : 'AI 生成上下文'}
+                </button>
               </div>
 
               <Field label="行业领域">
@@ -337,6 +442,115 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
                   className={cn(inputCls, 'h-auto py-2 resize-none')}
                 />
               </Field>
+            </div>
+          )}
+
+          {/* ── Tab: 历史教训 ── */}
+          {activeTab === 'lessons' && (
+            <div className="space-y-3">
+              {/* Add trigger / inline form */}
+              {!addingLesson ? (
+                <button
+                  type="button"
+                  onClick={() => { setEditingLessonId(null); setAddingLesson(true); setLessonDraft(emptyDraft()) }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--border)] py-3 text-xs text-[var(--text-2)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                >
+                  <Plus size={12} /> 添加教训
+                </button>
+              ) : (
+                <LessonForm
+                  draft={lessonDraft}
+                  onChange={setLessonDraft}
+                  onSave={handleAddLesson}
+                  onCancel={() => setAddingLesson(false)}
+                />
+              )}
+
+              {/* Empty state */}
+              {lessons.length === 0 && !addingLesson && (
+                <div className="rounded-xl border border-dashed border-[var(--border)] py-8 text-center">
+                  <p className="text-xs text-[var(--text-3)]">还没有记录任何教训</p>
+                  <p className="mt-1 text-xs text-[var(--text-3)]">每次 Agent 出错后记录下来，让系统越来越懂你的项目</p>
+                </div>
+              )}
+
+              {/* Lesson cards */}
+              {lessons.map((lesson) =>
+                editingLessonId === lesson.id ? (
+                  <div key={lesson.id} className="rounded-xl border border-[var(--accent)] bg-[var(--bg-panel-2)]">
+                    <LessonForm
+                      draft={lessonDraft}
+                      onChange={setLessonDraft}
+                      onSave={() => handleSaveEditLesson(lesson.id)}
+                      onCancel={() => setEditingLessonId(null)}
+                    />
+                  </div>
+                ) : (
+                  <div key={lesson.id} className="rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)]">
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedLessonId((prev) => (prev === lesson.id ? null : lesson.id))}
+                        className="text-[var(--text-3)] hover:text-[var(--text-1)]"
+                      >
+                        <ChevronDown
+                          size={13}
+                          className={cn('transition-transform', expandedLessonId === lesson.id && 'rotate-180')}
+                        />
+                      </button>
+                      <span className="rounded bg-[var(--bg-panel-3)] px-1.5 py-0.5 text-[11px] text-[var(--text-3)]">
+                        {lesson.date}
+                      </span>
+                      <span className="flex-1 truncate text-xs font-medium text-[var(--text-1)]">{lesson.title}</span>
+                      {lesson.promotedToRule && (
+                        <span className="rounded-full bg-[var(--accent-sub)] px-1.5 py-0.5 text-[10px] text-[var(--accent)]">
+                          已固化
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddingLesson(false)
+                          setEditingLessonId(lesson.id)
+                          setLessonDraft({
+                            date: lesson.date,
+                            title: lesson.title,
+                            background: lesson.background,
+                            correctApproach: lesson.correctApproach,
+                            promotedToRule: lesson.promotedToRule,
+                          })
+                        }}
+                        className="rounded p-1 text-[var(--text-3)] hover:text-[var(--text-1)]"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLessons((prev) => prev.filter((l) => l.id !== lesson.id))}
+                        className="rounded p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                    {expandedLessonId === lesson.id && (
+                      <div className="space-y-2 border-t border-[var(--border)] px-3 pb-3 pt-2">
+                        {lesson.background && (
+                          <div>
+                            <span className="mb-0.5 block text-[10px] font-medium text-[var(--text-3)]">背景</span>
+                            <p className="whitespace-pre-wrap text-xs leading-relaxed text-[var(--text-2)]">{lesson.background}</p>
+                          </div>
+                        )}
+                        {lesson.correctApproach && (
+                          <div>
+                            <span className="mb-0.5 block text-[10px] font-medium text-[var(--text-3)]">正确做法</span>
+                            <p className="whitespace-pre-wrap text-xs leading-relaxed text-[var(--text-2)]">{lesson.correctApproach}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           )}
 
@@ -389,5 +603,78 @@ function Field({ label, required, children }: { label: string; required?: boolea
       </span>
       {children}
     </label>
+  )
+}
+
+function LessonForm({
+  draft,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  draft: LessonDraft
+  onChange: (d: LessonDraft) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="space-y-2 p-3">
+      <div className="flex gap-2">
+        <input
+          type="date"
+          value={draft.date}
+          onChange={(e) => onChange({ ...draft, date: e.target.value })}
+          className={cn(inputCls, 'w-[140px] shrink-0')}
+        />
+        <input
+          value={draft.title}
+          onChange={(e) => onChange({ ...draft, title: e.target.value })}
+          placeholder="教训标题，例：删除确认统一用 Modal"
+          className={inputCls}
+        />
+      </div>
+      <textarea
+        value={draft.background}
+        onChange={(e) => onChange({ ...draft, background: e.target.value })}
+        rows={2}
+        placeholder="背景：Agent 做了什么？为什么是错的？"
+        className={cn(inputCls, 'h-auto py-2 resize-none')}
+      />
+      <textarea
+        value={draft.correctApproach}
+        onChange={(e) => onChange({ ...draft, correctApproach: e.target.value })}
+        rows={2}
+        placeholder="正确做法：下次应该怎么做？"
+        className={cn(inputCls, 'h-auto py-2 resize-none')}
+      />
+      <div className="flex items-center justify-between">
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--text-2)]">
+          <input
+            type="checkbox"
+            checked={draft.promotedToRule}
+            onChange={(e) => onChange({ ...draft, promotedToRule: e.target.checked })}
+            className="rounded"
+          />
+          同步固化为研发规范
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-2)]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!draft.title.trim()}
+            className="rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

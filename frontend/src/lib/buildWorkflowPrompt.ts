@@ -14,9 +14,9 @@ export function buildWorkflowSuggestPrompt(
 
 ## 项目上下文
 - 行业：${projectContext.industry}
-- 技术栈：${projectContext.techStack.join(', ')}
-- 团队约定：
-${projectContext.conventions.map((c) => `  - ${c}`).join('\n')}
+- 技术栈：${projectContext.techStack.map((t) => typeof t === 'string' ? t : t.name).join(', ')}
+- 团队规范：
+${(projectContext.rules ?? []).map((r) => `  - ${typeof r === 'string' ? r : r.text}`).join('\n')}
 
 ## 待分析需求
 - 标题：${truncatedTitle}

@@ -2,9 +2,12 @@
 
 Tables
 ------
-projects      – one row per project; complex fields stored as JSON text.
-requirements  – one row per requirement; complex fields stored as JSON text.
-project_seq   – monotonic sequence counter per project (for REQ codes).
+projects           – one row per project; complex fields stored as JSON text.
+requirements       – one row per requirement; complex fields stored as JSON text.
+project_seq        – monotonic sequence counter per project (for REQ codes).
+artifacts          – produced artifacts from workflow execution.
+commander_state    – persisted Commander conversation when paused for approval.
+pending_suggestions – Agent-suggested context updates awaiting human confirmation.
 """
 from __future__ import annotations
 
@@ -87,6 +90,46 @@ project_seq_table = Table(
     Column("seq", Integer, default=299),
 )
 
+# ── Artifacts ─────────────────────────────────────────────────────────────────
+
+artifacts_table = Table(
+    "artifacts",
+    metadata,
+    Column("id", String, primary_key=True),          # uuid4
+    Column("req_id", String, nullable=False),
+    Column("step_id", String, nullable=False),
+    Column("name", String, nullable=False),
+    Column("type", String, nullable=False),
+    Column("summary", String, default=""),
+    Column("content", Text, default=""),
+    Column("format", String, default="markdown"),
+)
+
+# ── Commander State ───────────────────────────────────────────────────────────
+
+commander_state_table = Table(
+    "commander_state",
+    metadata,
+    Column("req_id", String, primary_key=True),
+    Column("messages", Text, nullable=False),         # JSON list（不含 artifact 全文）
+    Column("pending_tool_call_id", String),           # 暂停时的 tool_call_id
+    Column("updated_at", Integer, default=0),
+)
+
+# ── Pending Context Suggestions ───────────────────────────────────────────────
+
+pending_suggestions_table = Table(
+    "pending_suggestions",
+    metadata,
+    Column("id", String, primary_key=True),           # uuid4
+    Column("project_id", String, nullable=False),
+    Column("req_id", String, nullable=False),
+    Column("step_id", String, nullable=False),
+    Column("agent_name", String, nullable=False),
+    Column("suggestion", Text, nullable=False),       # JSON: {type, scope, text/title/...}
+    Column("created_at", Integer, default=0),
+)
+
 # ── Init ──────────────────────────────────────────────────────────────────────
 
 def init_db() -> None:
@@ -164,13 +207,28 @@ def _seed_if_empty() -> None:
                 "member_ids": json.dumps(["u1", "u2", "u3", "u4"]),
                 "color": "#0A84FF",
                 "context": json.dumps({
+                    "goal": "AI 驱动的研发流水线编排平台",
+                    "targetUsers": "B 端 PM 和研发负责人，操作频率低，容错优先于速度",
                     "industry": "SaaS / 企业软件",
-                    "techStack": ["React", "TypeScript", "Node.js", "PostgreSQL"],
-                    "conventions": [
-                        "PRD 变更必须走版本评审",
-                        "所有流水线步骤必须可追踪状态",
-                        "阻塞超过 2 小时必须触发告警",
+                    "techStack": [
+                        {"name": "React", "version": "19", "notes": "Zustand UI状态；TanStack Query服务端数据；禁Redux"},
+                        {"name": "TypeScript"},
+                        {"name": "FastAPI"},
+                        {"name": "SQLite", "notes": "dev 环境；MSW 拦截 /api/v1/*"},
                     ],
+                    "archSummary": "SPA → REST /api/v1/* → SQLite；dev 用 MSW mock",
+                    "avoid": [
+                        {"item": "window.confirm()", "useInstead": "Radix UI Dialog", "reason": "全项目视觉一致性"},
+                        {"item": "TypeScript any", "useInstead": "unknown 或具体类型"},
+                    ],
+                    "rules": [
+                        {"scope": "dev", "text": "import type 用于纯类型导入（verbatimModuleSyntax: true）", "source": "human"},
+                        {"scope": "all", "text": "PRD 变更必须走版本评审", "source": "human"},
+                        {"scope": "all", "text": "所有流水线步骤必须可追踪状态", "source": "human"},
+                        {"scope": "all", "text": "阻塞超过 2 小时必须触发告警", "source": "human"},
+                    ],
+                    "domainModel": "Project(1)→Requirement(N)→PipelineStep(N)\nRequirement(1)→Story(N)→PipelineStep(N)\nPipelineStep.status: queued→running→done|blocked|pending_approval|pending_advisory_approval",
+                    "lessons": [],
                 }),
                 "settings": None,
                 "start_date": "2026-01-10",
@@ -188,12 +246,22 @@ def _seed_if_empty() -> None:
                 "member_ids": json.dumps(["u1", "u3", "u4"]),
                 "color": "#30D158",
                 "context": json.dumps({
+                    "goal": "统一展示 Agent 运行效率、故障分布和质量趋势",
+                    "targetUsers": "研发团队负责人",
                     "industry": "平台工具",
-                    "techStack": ["React", "Go", "ClickHouse"],
-                    "conventions": [
-                        "接口变更需要同步更新监控指标",
-                        "核心视图加载时间小于 2 秒",
+                    "techStack": [
+                        {"name": "React"},
+                        {"name": "Go"},
+                        {"name": "ClickHouse"},
                     ],
+                    "archSummary": "",
+                    "avoid": [],
+                    "rules": [
+                        {"scope": "all", "text": "接口变更需要同步更新监控指标", "source": "human"},
+                        {"scope": "all", "text": "核心视图加载时间小于 2 秒", "source": "human"},
+                    ],
+                    "domainModel": "",
+                    "lessons": [],
                 }),
                 "settings": None,
                 "start_date": "2026-04-01",

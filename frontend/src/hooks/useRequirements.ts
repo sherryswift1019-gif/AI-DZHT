@@ -14,6 +14,11 @@ export function useRequirementList(projectId: string) {
       return res.json() as Promise<Requirement[]>
     },
     enabled: !!projectId,
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (!data) return false
+      return data.some((r) => r.status === 'running') ? 5000 : false
+    },
   })
 }
 
@@ -92,6 +97,61 @@ export function useDeleteRequirement() {
         method: 'DELETE',
       })
       if (!res.ok && res.status !== 204) throw new Error(`Failed to delete requirement (${res.status})`)
+    },
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+    },
+  })
+}
+
+// ── Approve Step ──────────────────────────────────────────────────────────────
+
+export interface ApproveStepPayload {
+  projectId: string
+  reqId: string
+  stepId: string
+}
+
+export function useApproveStep() {
+  const qc = useQueryClient()
+  return useMutation<Requirement, Error, ApproveStepPayload>({
+    mutationFn: async ({ projectId, reqId, stepId }) => {
+      const res = await fetch(`${BASE}/${projectId}/requirements/${reqId}/approve-step/${stepId}`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error(`Failed to approve step (${res.status})`)
+      return res.json() as Promise<Requirement>
+    },
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+    },
+  })
+}
+
+// ── Dismiss Advisory ──────────────────────────────────────────────────────────
+
+export interface DismissAdvisoryPayload {
+  projectId: string
+  reqId: string
+  stepId: string
+  lessonTitle?: string
+  correctApproach?: string
+  background?: string
+  scope?: string
+  promoteToRule?: boolean
+}
+
+export function useDismissAdvisory() {
+  const qc = useQueryClient()
+  return useMutation<Requirement, Error, DismissAdvisoryPayload>({
+    mutationFn: async ({ projectId, reqId, stepId, ...body }) => {
+      const res = await fetch(`${BASE}/${projectId}/requirements/${reqId}/dismiss-advisory/${stepId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`Failed to dismiss advisory (${res.status})`)
+      return res.json() as Promise<Requirement>
     },
     onSuccess: (_, vars) => {
       void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
