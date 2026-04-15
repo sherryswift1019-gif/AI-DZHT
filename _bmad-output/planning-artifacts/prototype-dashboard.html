@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-DZHT 研发指挥台</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #0d1117;
+  color: #e6edf3;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ══ TOP NAV ══ */
+.topnav {
+  height: 52px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+.logo { font-size: 17px; font-weight: 700; color: #58a6ff; letter-spacing: 1px; margin-right: 32px; }
+.logo em { color: #3fb950; font-style: normal; }
+
+.gstats { display: flex; gap: 20px; }
+.gs { display: flex; flex-direction: column; align-items: center; }
+.gsv { font-size: 15px; font-weight: 700; }
+.gsl { font-size: 10px; color: #8b949e; margin-top: 1px; }
+
+.role-tabs { display: flex; gap: 3px; margin-left: auto; }
+.rtab {
+  padding: 5px 14px; border-radius: 6px; font-size: 12px;
+  cursor: pointer; color: #8b949e; border: 1px solid transparent; transition: all .15s;
+}
+.rtab:hover { color: #e6edf3; background: #21262d; }
+.rtab.on { color: #58a6ff; background: #1f2d3d; border-color: #1f6feb; }
+
+/* ══ MAIN ══ */
+.main { flex:1; display:flex; overflow:hidden; }
+
+/* ══ LEFT ══ */
+.lpanel {
+  width: 260px; flex-shrink: 0;
+  background: #161b22; border-right: 1px solid #30363d;
+  display: flex; flex-direction: column;
+}
+.ph {
+  padding: 12px 16px; border-bottom: 1px solid #30363d;
+  font-size: 11px; font-weight: 600; color: #8b949e;
+  text-transform: uppercase; letter-spacing: .5px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.ph-ct { background:#21262d; color:#e6edf3; padding:1px 8px; border-radius:10px; font-size:11px; }
+.reqlist { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:7px; }
+
+.rcard {
+  background: #21262d; border: 1.5px solid #30363d;
+  border-radius: 8px; padding: 11px 12px; cursor: pointer; transition: all .2s;
+}
+.rcard:hover { border-color:#58a6ff50; background:#262c36; }
+.rcard.sel  { border-color:#58a6ff; }
+.rcard.jammed { border-color:#f85149; background:#1d1418; }
+
+.rt-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.rid { font-size:11px; color:#58a6ff; font-weight:600; }
+.rpri { font-size:10px; padding:1px 6px; border-radius:3px; font-weight:700; }
+.p1 { background:#f8514920; color:#f85149; }
+.p2 { background:#d2992220; color:#d29922; }
+.p3 { background:#3fb95020; color:#3fb950; }
+
+.rtitle { font-size:12px; color:#e6edf3; line-height:1.4; margin-bottom:8px; }
+
+.rbar { display:flex; gap:3px; margin-bottom:6px; }
+.rd { height:4px; border-radius:2px; flex:1; background:#30363d; }
+.rd.done { background:#3fb950; }
+.rd.run  { background:#58a6ff; animation:pbar 1.5s infinite; }
+.rd.jam  { background:#f85149; }
+@keyframes pbar { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.rmeta { display:flex; justify-content:space-between; font-size:10px; color:#8b949e; }
+
+/* ══ CENTER ══ */
+.cpanel {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:flex-start;
+  padding: 16px 0 20px;
+  position:relative; overflow:hidden;
+  background: radial-gradient(ellipse at center, #0f1923 0%, #0d1117 70%);
+}
+.ctitle {
+  font-size: 24px;
+  font-weight: 800;
+  color: #dbe8ff;
+  letter-spacing: 2.2px;
+  text-transform: uppercase;
+  margin-bottom: 26px;
+  text-shadow: 0 2px 14px #1f6feb3d;
+}
+
+/* ── TABLE STAGE ── */
+.stage {
+  position: relative;
+  width: 500px;
+  height: 500px;
+  margin-top: 8px;
+}
+
+/* Round table surface */
+.table-surface {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 176px; height: 176px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 35%, #2a3a2e 0%, #1a2820 40%, #121e18 100%);
+  border: 3px solid #2e4035;
+  box-shadow:
+    0 0 0 6px #1a2820,
+    0 0 0 7px #253030,
+    0 8px 40px #00000080,
+    inset 0 2px 8px #3fb95015;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 2;
+}
+.ts-label { font-size:10px; color:#4a7a5a; text-transform:uppercase; letter-spacing:.8px; }
+.ts-status { font-size:21px; font-weight:800; color:#3fb950; margin:2px 0; }
+.ts-sub { font-size:10px; color:#3a6a4a; }
+
+/* ── AGENT CHARACTERS ── */
+.agent {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  cursor: pointer;
+  z-index: 3;
+}
+
+/* Speech bubble above avatar */
+.bubble {
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 10px;
+  color: #8b949e;
+  white-space: nowrap;
+  margin-bottom: 6px;
+  position: relative;
+  max-width: 110px;
+  text-align: center;
+  line-height: 1.3;
+}
+.bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -6px; left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #30363d;
+}
+.bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -4px; left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #21262d;
+  z-index: 1;
+}
+.bubble.active { border-color: #3fb95060; color: #c8f0d8; }
+.bubble.active::after { border-top-color: #3fb95060; }
+.bubble.waiting { border-color: #d2992260; color: #f0d8a0; }
+.bubble.waiting::after { border-top-color: #d2992260; }
+.bubble.stuck { border-color: #f8514960; color: #f0a0a0; }
+.bubble.stuck::after { border-top-color: #f8514960; }
+.bubble.human { border-color: #58a6ff60; color: #a0c8f0; }
+.bubble.human::after { border-top-color: #58a6ff60; }
+
+/* Typing dots */
+.dots { display: inline-flex; gap: 2px; align-items: center; }
+.dots span {
+  width: 4px; height: 4px; border-radius: 50%; background: #3fb950;
+  animation: dot 1.2s infinite;
+}
+.dots span:nth-child(2) { animation-delay: .2s; }
+.dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes dot { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-4px)} }
+
+/* Character figure — no border, free-standing illustration */
+.avatar-ring {
+  width: 90px; height: 92px;
+  border: none; background: transparent;
+  border-radius: 0; overflow: visible;
+  position: relative;
+  transition: transform .22s;
+  filter: drop-shadow(0 4px 12px #00000060);
+}
+.agent:hover .avatar-ring { transform: scale(1.07) translateY(-3px); }
+
+/* Status glow — ground shadow under each character */
+.avatar-ring::after {
+  content: '';
+  position: absolute;
+  bottom: 3px; left: 50%; transform: translateX(-50%);
+  width: 56px; height: 12px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.avatar-ring.run::after  { background: radial-gradient(ellipse, #3fb95055 0%, transparent 70%); animation: grun 2.2s infinite; }
+.avatar-ring.idle::after { background: radial-gradient(ellipse, #30363d44 0%, transparent 70%); }
+.avatar-ring.wait::after { background: radial-gradient(ellipse, #d2992255 0%, transparent 70%); animation: gwait 1.8s infinite; }
+
+@keyframes grun  { 0%,100%{opacity:.8} 50%{opacity:1.0} }
+@keyframes gwait { 0%,100%{opacity:.6} 50%{opacity:1.0} }
+
+.avatar-ring svg { display:block; overflow:visible; }
+
+/* Approval badge attached near the target agent */
+.appr-badge {
+  position: absolute;
+  right: -26px;
+  bottom: 24px;
+  background: #d29922; color: white;
+  font-size: 10px; font-weight: 800;
+  padding: 4px 10px; border-radius: 12px;
+  border: 2px solid #0d1117;
+  white-space: nowrap; z-index: 10;
+  animation: badgepop 1.2s infinite;
+  letter-spacing: .4px;
+}
+@keyframes badgepop {
+  0%,100%{ transform: scale(1); box-shadow:0 0 6px #d2992260; }
+  50%{ transform: scale(1.08); box-shadow:0 0 12px #d2992290; }
+}
+
+/* Status indicator dot on avatar */
+.status-dot {
+  position: absolute;
+  bottom: 2px; right: 2px;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  border: 2px solid #161b22;
+}
+.sd-run  { background: #3fb950; }
+.sd-idle { background: #484f58; }
+.sd-wait { background: #d29922; }
+.sd-jam  { background: #f85149; }
+.sd-hum  { background: #58a6ff; animation: sdpulse 1s infinite; }
+@keyframes sdpulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* Name tag */
+.atag {
+  margin-top: 1px;
+  text-align: center;
+}
+.aname { font-size: 11px; font-weight: 600; color: #e6edf3; white-space: nowrap; }
+.atokens { font-size: 9px; color: #58a6ff; margin-top: 1px; }
+
+/* Connector lines (SVG) */
+.connectors {
+  position: absolute; top:0; left:0;
+  width:100%; height:100%;
+  pointer-events: none; z-index: 1;
+}
+
+.cfooter {
+  font-size:11px; color:#8b949e; margin-top:14px; text-align:center;
+}
+.ndot {
+  display:inline-block; width:7px; height:7px; background:#d29922;
+  border-radius:50%; vertical-align:middle; margin:0 3px;
+  animation: blink 1s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.1} }
+
+/* ══ RIGHT ══ */
+.rpanel {
+  width: 284px; flex-shrink: 0;
+  background: #161b22; border-left: 1px solid #30363d;
+  display: flex; flex-direction: column;
+}
+.dhead { padding:14px 16px; border-bottom:1px solid #30363d; }
+.drid  { font-size:11px; color:#58a6ff; margin-bottom:3px; }
+.dtitle{ font-size:14px; font-weight:600; color:#e6edf3; line-height:1.35; }
+
+.scroll { flex:1; overflow-y:auto; }
+
+.approve-box {
+  margin:12px; padding:14px;
+  background:#1e2d40; border:1px solid #1f6feb; border-radius:8px;
+}
+.ab-title { font-size:12px; color:#58a6ff; font-weight:600; margin-bottom:5px; }
+.ab-desc  { font-size:11px; color:#8b949e; line-height:1.55; margin-bottom:10px; }
+.ab-btns  { display:flex; gap:8px; }
+.btn-ok { flex:1; padding:7px; background:#238636; border:none; border-radius:6px; color:#fff; font-size:12px; cursor:pointer; font-weight:600; }
+.btn-no { flex:1; padding:7px; background:#21262d; border:1px solid #f85149; border-radius:6px; color:#f85149; font-size:12px; cursor:pointer; }
+
+.stages-blk { padding:14px 16px; border-bottom:1px solid #30363d; }
+.blk-lbl    { font-size:10px; color:#8b949e; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+
+.srow { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid #21262d; }
+.srow:last-child { border-bottom:none; }
+.srow.dim { opacity:.35; }
+.srow.cur { background:#1e2d2010; border-radius:6px; padding-left:4px; }
+.si  { font-size:13px; width:18px; text-align:center; flex-shrink:0; }
+.sinfo { flex:1; }
+.sn  { font-size:12px; color:#e6edf3; }
+.sd  { font-size:10px; color:#8b949e; }
+.sbadge { font-size:10px; padding:2px 6px; border-radius:4px; white-space:nowrap; }
+.st  { font-size:10px; color:#8b949e; white-space:nowrap; }
+
+.mgrid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px 16px; }
+.mc  { background:#21262d; border-radius:8px; padding:11px 12px; }
+.mcv { font-size:20px; font-weight:700; color:#e6edf3; }
+.mcl { font-size:10px; color:#8b949e; margin-top:2px; }
+
+.meeting-bar {
+  margin-top: 10px;
+  width: min(620px, calc(100vw - 48px));
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.meeting-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: #8b949e;
+}
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3fb950;
+  box-shadow: 0 0 0 0 #3fb95066;
+  animation: meetingPulse 1.8s infinite;
+}
+@keyframes meetingPulse {
+  0% { box-shadow: 0 0 0 0 #3fb95066; }
+  70% { box-shadow: 0 0 0 7px #3fb95000; }
+  100% { box-shadow: 0 0 0 0 #3fb95000; }
+}
+.meeting-clock {
+  color: #58a6ff;
+  font-weight: 700;
+  letter-spacing: .3px;
+}
+.meeting-actions {
+  display: flex;
+  gap: 8px;
+}
+.m-btn {
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #e6edf3;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.m-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+.m-btn.primary {
+  background: #1f6feb1f;
+  border-color: #1f6feb;
+  color: #58a6ff;
+}
+
+.minutes {
+  padding: 14px 16px;
+  border-top: 1px solid #30363d;
+}
+.minutes-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.minute {
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.minute-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 10px;
+  color: #8b949e;
+}
+.minute-r {
+  color: #58a6ff;
+  font-weight: 700;
+}
+.minute-c {
+  font-size: 11px;
+  color: #c9d1d9;
+  line-height: 1.45;
+}
+
+.agent.speaking .avatar-ring { animation: speakBounce .8s ease-in-out infinite; }
+@keyframes speakBounce {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* ══ BREADCRUMB ══ */
+.breadcrumb {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: #8b949e; margin: 0 20px;
+}
+.breadcrumb a { color: #58a6ff; cursor: pointer; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb .bslash { color: #484f58; }
+.breadcrumb .bcur { color: #e6edf3; }
+
+/* ══ LEFT PANEL HEADER ══ */
+.lph { flex-shrink: 0; border-bottom: 1px solid #30363d; display: flex; flex-direction: column; }
+.lph-top { padding: 10px 12px 8px; display: flex; align-items: center; gap: 6px; }
+.lph-title { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; flex: 1; }
+.lph-add {
+  width: 24px; height: 24px; border-radius: 6px;
+  background: #21262d; border: 1px solid #30363d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; line-height: 1; color: #58a6ff; cursor: pointer; transition: all .15s;
+}
+.lph-add:hover { background: #1f6feb20; border-color: #58a6ff; }
+.lph-search { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 7px; }
+.lph-input {
+  width: 100%; padding: 5px 10px; background: #0d1117;
+  border: 1px solid #30363d; border-radius: 6px;
+  color: #e6edf3; font-size: 12px; outline: none; font-family: inherit;
+}
+.lph-input:focus { border-color: #58a6ff; }
+.lph-input::placeholder { color: #484f58; }
+.lph-filters { display: flex; gap: 5px; flex-wrap: wrap; }
+.lf-btn {
+  padding: 2px 8px; border-radius: 4px; font-size: 11px;
+  cursor: pointer; color: #8b949e; border: 1px solid #30363d;
+  background: transparent; transition: all .12s; user-select: none;
+}
+.lf-btn:hover { color: #e6edf3; border-color: #484f58; }
+.lf-btn.on { color: #58a6ff; background: #1f2d3d; border-color: #1f6feb; }
+
+/* ══ RCARD HOVER ACTIONS ══ */
+.rcard { position: relative; }
+.rcard-actions { position: absolute; top: 8px; right: 8px; display: none; gap: 4px; }
+.rcard:hover .rcard-actions { display: flex; }
+.rca-btn {
+  width: 22px; height: 22px; border-radius: 4px;
+  background: #161b22; border: 1px solid #30363d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; cursor: pointer; transition: all .12s;
+}
+.rca-btn:hover { border-color: #58a6ff; }
+.rca-btn.del:hover { border-color: #f85149; }
+
+/* ══ REQ MODAL ══ */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: #00000088; z-index: 1000;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: #161b22; border: 1px solid #30363d;
+  border-radius: 12px; width: 440px; max-width: 96vw;
+  padding: 22px 24px; box-shadow: 0 20px 60px #00000070;
+}
+.modal-title { font-size: 15px; font-weight: 700; color: #e6edf3; margin-bottom: 18px; }
+.mform-row { margin-bottom: 14px; }
+.mform-label { font-size: 11px; color: #8b949e; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .4px; }
+.mform-row input, .mform-row textarea, .mform-row select {
+  width: 100%; padding: 8px 10px; background: #0d1117;
+  border: 1px solid #30363d; border-radius: 7px;
+  color: #e6edf3; font-size: 13px; outline: none; font-family: inherit;
+}
+.mform-row input:focus, .mform-row textarea:focus, .mform-row select:focus { border-color: #58a6ff; }
+.mform-row textarea { resize: vertical; min-height: 70px; }
+.mform-row select option { background: #161b22; }
+.mform-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-tpl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.tpl-opt {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 10px; background: #21262d; border: 1.5px solid #30363d;
+  border-radius: 7px; cursor: pointer; font-size: 12px; color: #8b949e; transition: all .12s;
+}
+.tpl-opt:hover { border-color: #58a6ff40; color: #e6edf3; }
+.tpl-opt.sel { border-color: #58a6ff; color: #58a6ff; background: #1f2d3d; }
+.tpl-opt input { display: none; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.mbtn-cancel {
+  padding: 8px 18px; background: transparent; border: 1px solid #30363d;
+  border-radius: 7px; color: #8b949e; font-size: 13px; cursor: pointer;
+}
+.mbtn-cancel:hover { border-color: #58a6ff; color: #58a6ff; }
+.mbtn-ok {
+  padding: 8px 22px; background: #1f6feb; border: none;
+  border-radius: 7px; color: white; font-size: 13px; cursor: pointer; font-weight: 600;
+}
+.mbtn-ok:hover { background: #388bfd; }
+/* DELETE CONFIRM */
+.del-modal { max-width: 360px; }
+.del-desc { font-size: 13px; color: #8b949e; line-height: 1.6; margin-bottom: 20px; }
+.mbtn-del {
+  padding: 8px 22px; background: #da3633; border: none;
+  border-radius: 7px; color: white; font-size: 13px; cursor: pointer; font-weight: 600;
+}
+.mbtn-del:hover { background: #f85149; }
+
+@media (max-width: 1200px) {
+  body { overflow: auto; height: auto; min-height: 100vh; }
+  .main { flex-direction: column; overflow: visible; }
+  .lpanel, .rpanel { width: 100%; border: none; border-top: 1px solid #30363d; }
+  .cpanel { min-height: 700px; padding: 16px 0 24px; }
+}
+
+@media (max-width: 760px) {
+  .topnav { height: auto; flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .logo { margin-right: 0; }
+  .gstats { width: 100%; justify-content: space-between; }
+  .role-tabs { margin-left: 0; width: 100%; overflow-x: auto; }
+  .stage { width: 360px; height: 360px; }
+  .ctitle { font-size: 18px; margin-bottom: 18px; letter-spacing: 1.6px; }
+  .table-surface { width: 140px; height: 140px; }
+  .ts-status { font-size: 18px; }
+  .avatar-ring { transform: scale(.82); }
+  .agent:hover .avatar-ring { transform: scale(.87) translateY(-2px); }
+  .appr-badge { right: -18px; bottom: 20px; font-size: 9px; padding: 3px 8px; }
+  .meeting-bar { width: calc(100vw - 24px); margin-top: 8px; flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<div class="topnav">
+  <div class="logo">AI-DZHT &nbsp;<em>指挥台</em></div>
+  <div class="breadcrumb">
+    <a onclick="window.location.href='prototype-project-management.html'">项目管理</a>
+    <span class="bslash">/</span>
+    <span id="breadProject" class="bcur">—</span>
+    <span class="bslash">/</span>
+    <span>研发大盘</span>
+  </div>
+  <div class="gstats">
+    <div class="gs"><div class="gsv" style="color:#3fb950">5</div><div class="gsl">进行中</div></div>
+    <div class="gs"><div class="gsv" style="color:#d29922">2</div><div class="gsl">待审批</div></div>
+    <div class="gs"><div class="gsv" style="color:#f85149">1</div><div class="gsl">卡住</div></div>
+    <div class="gs"><div class="gsv">128K</div><div class="gsl">今日 Token</div></div>
+    <div class="gs"><div class="gsv" style="color:#58a6ff">¥1.83</div><div class="gsl">今日成本</div></div>
+  </div>
+  <div class="role-tabs">
+    <div class="rtab on" onclick="setRole(this)">研发负责人</div>
+    <div class="rtab" onclick="setRole(this)">产品经理</div>
+    <div class="rtab" onclick="setRole(this)">工程师</div>
+    <div class="rtab" onclick="setRole(this)">QA</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT -->
+  <div class="lpanel">
+    <div class="lph">
+      <div class="lph-top">
+        <span class="lph-title">需求列表</span>
+        <span class="ph-ct" id="reqCount">5</span>
+        <span class="lph-add" onclick="openAddReqModal()" title="新建需求">＋</span>
+      </div>
+      <div class="lph-search">
+        <input class="lph-input" id="reqSearch" placeholder="搜索需求标题…" oninput="filterReqs(this.value)">
+        <div class="lph-filters">
+          <span class="lf-btn on" onclick="filterByStatus(this,'all')">全部</span>
+          <span class="lf-btn" onclick="filterByStatus(this,'run')">执行中</span>
+          <span class="lf-btn" onclick="filterByStatus(this,'wait')">待审批</span>
+          <span class="lf-btn" onclick="filterByStatus(this,'queue')">待启动</span>
+        </div>
+      </div>
+    </div>
+    <div class="reqlist" id="reqList">
+      <div class="rcard sel" onclick="selReq(this, false)">
+        <div class="rt-top"><span class="rid">#REQ-042</span><span class="rpri p1">P1</span></div>
+        <div class="rtitle">用户登录与权限体系优化</div>
+        <div class="rbar">
+          <div class="rd done"></div><div class="rd done"></div>
+          <div class="rd done"></div><div class="rd run"></div>
+          <div class="rd"></div><div class="rd"></div>
+        </div>
+        <div class="rmeta"><span>开发 Agent 编码中</span><span>2h 34m</span></div>
+      </div>
+      <div class="rcard jammed" onclick="selReq(this, true)">
+        <div class="rt-top"><span class="rid">#REQ-039</span><span class="rpri p1">P1</span></div>
+        <div class="rtitle">数据导出 — 支持 Excel / CSV</div>
+        <div class="rbar">
+          <div class="rd done"></div><div class="rd done"></div>
+          <div class="rd jam"></div><div class="rd"></div>
+          <div class="rd"></div><div class="rd"></div>
+        </div>
+        <div class="rmeta"><span style="color:#f85149">⚠ 架构评审待审批</span><span style="color:#f85149">卡 1h 12m</span></div>
+      </div>
+      <div class="rcard" onclick="selReq(this, false)">
+        <div class="rt-top"><span class="rid">#REQ-041</span><span class="rpri p2">P2</span></div>
+        <div class="rtitle">消息通知中心重构</div>
+        <div class="rbar">
+          <div class="rd done"></div><div class="rd run"></div>
+          <div class="rd"></div><div class="rd"></div>
+          <div class="rd"></div><div class="rd"></div>
+        </div>
+        <div class="rmeta"><span>设计 Agent 执行中</span><span>45m</span></div>
+      </div>
+      <div class="rcard" onclick="selReq(this, false)">
+        <div class="rt-top"><span class="rid">#REQ-040</span><span class="rpri p2">P2</span></div>
+        <div class="rtitle">报表筛选条件持久化</div>
+        <div class="rbar">
+          <div class="rd done"></div><div class="rd done"></div>
+          <div class="rd done"></div><div class="rd done"></div>
+          <div class="rd run"></div><div class="rd"></div>
+        </div>
+        <div class="rmeta"><span>测试 Agent 执行中</span><span>4h 10m</span></div>
+      </div>
+      <div class="rcard" onclick="selReq(this, false)">
+        <div class="rt-top"><span class="rid">#REQ-038</span><span class="rpri p3">P3</span></div>
+        <div class="rtitle">移动端适配优化</div>
+        <div class="rbar">
+          <div class="rd run"></div><div class="rd"></div>
+          <div class="rd"></div><div class="rd"></div>
+          <div class="rd"></div><div class="rd"></div>
+        </div>
+        <div class="rmeta"><span>需求 Agent 分析中</span><span>12m</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER -->
+  <div class="cpanel">
+    <div class="ctitle">Agent 圆桌作战室</div>
+
+    <div class="stage" id="stage">
+
+      <!-- SVG connectors -->
+      <svg class="connectors" id="connSvg" viewBox="0 0 500 500">
+        <defs>
+          <radialGradient id="lineGrad">
+            <stop offset="0%" stop-color="#3fb950" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="#3fb950" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <!-- Lines drawn by JS -->
+      </svg>
+
+      <!-- Table surface -->
+      <div class="table-surface">
+        <div class="ts-label">系统状态</div>
+        <div class="ts-status">运行中</div>
+        <div class="ts-sub">6 Agent · 5 需求</div>
+      </div>
+
+      <!-- ── 指挥官 (top, -90°) ── -->
+      <div class="agent" id="a0">
+        <div class="bubble active">统筹调度中<div class="dots"><span></span><span></span><span></span></div></div>
+        <div class="avatar-ring run">
+          <svg viewBox="0 0 72 82" width="72" height="82" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="36" width="68" height="10" rx="5" fill="#3d3020"/><rect x="2" y="36" width="68" height="5" rx="5" fill="#4d4030" fill-opacity=".7"/><rect x="3" y="36" width="10" height="30" rx="4" fill="#2d2010"/><rect x="59" y="36" width="10" height="30" rx="4" fill="#2d2010"/>
+            <path d="M0 82 L0 64 Q8 58 28 56 L36 54 L44 56 Q64 58 72 64 L72 82 Z" fill="#0d1a30"/>
+            <path d="M28 56 L32 63 L36 59 L40 63 L44 56" fill="#172545"/>
+            <path d="M16 65 L17.8 60 L19.5 65 L15.5 62 L21.5 62 Z" fill="#f0c040"/>
+            <path d="M30 47 Q36 52 42 47 L42 56 L30 56 Z" fill="#f0c09a"/>
+            <ellipse cx="36" cy="29" rx="18" ry="19" fill="#f0c09a"/>
+            <ellipse cx="18" cy="30" rx="3.5" ry="4.5" fill="#d8a070"/>
+            <ellipse cx="54" cy="30" rx="3.5" ry="4.5" fill="#d8a070"/>
+            <path d="M18 30 Q18 13 24 10 L24 18 Z" fill="#0d0d14"/><path d="M54 30 Q54 13 48 10 L48 18 Z" fill="#0d0d14"/><rect x="24" y="10" width="24" height="9" rx="1" fill="#0d0d14"/>
+            <path d="M22 22 L31 21" stroke="#0d0d14" stroke-width="2.3" stroke-linecap="round"/><path d="M41 21 L50 22" stroke="#0d0d14" stroke-width="2.3" stroke-linecap="round"/>
+            <ellipse cx="27" cy="27" rx="5.5" ry="4.5" fill="white"/><circle cx="28" cy="28" r="3.2" fill="#3a2010"/><circle cx="28.8" cy="27.2" r="1.4" fill="#080808"/><circle cx="27.2" cy="26.5" r="0.9" fill="white"/>
+            <ellipse cx="45" cy="27" rx="5.5" ry="4.5" fill="white"/><circle cx="44" cy="28" r="3.2" fill="#3a2010"/><circle cx="44.8" cy="27.2" r="1.4" fill="#080808"/><circle cx="43.2" cy="26.5" r="0.9" fill="white"/>
+            <path d="M34 35 Q36 39 38 35" stroke="#c89060" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+            <path d="M28 43 L44 43" stroke="#a07050" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <div class="status-dot sd-run"></div>
+        </div>
+        <div class="atag"><div class="aname">指挥官</div><div class="atokens">12.4K tok</div></div>
+      </div>
+
+      <!-- ── 需求 Agent (top-right) ── -->
+      <div class="agent" id="a1">
+        <div class="bubble active">#038 需求拆解中<div class="dots"><span></span><span></span><span></span></div></div>
+        <div class="avatar-ring run">
+          <svg viewBox="0 0 72 82" width="72" height="82" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="36" width="68" height="10" rx="5" fill="#3d3020"/><rect x="2" y="36" width="68" height="5" rx="5" fill="#4d4030" fill-opacity=".7"/><rect x="3" y="36" width="10" height="30" rx="4" fill="#2d2010"/><rect x="59" y="36" width="10" height="30" rx="4" fill="#2d2010"/>
+            <path d="M0 82 L0 64 Q8 58 28 56 L36 54 L44 56 Q64 58 72 64 L72 82 Z" fill="#2a5a9a"/>
+            <path d="M30 47 Q36 52 42 47 L42 56 L30 56 Z" fill="#f5d0b0"/>
+            <ellipse cx="36" cy="29" rx="18" ry="19" fill="#f5d0b0"/>
+            <ellipse cx="18" cy="30" rx="3.5" ry="4.5" fill="#e0b890"/>
+            <ellipse cx="54" cy="30" rx="3.5" ry="4.5" fill="#e0b890"/>
+            <path d="M18 30 Q18 14 25 10 Q36 8 47 10 Q54 14 54 30 Q48 14 36 13 Q24 14 18 30Z" fill="#6b4423"/>
+            <path d="M34 12 L33 18" stroke="#f5d0b0" stroke-width="1.5"/>
+            <path d="M22 19 Q27 17.5 31 19" stroke="#4a2e10" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M41 19 Q45 17.5 50 19" stroke="#4a2e10" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="27" cy="27" rx="5.5" ry="4.5" fill="white"/>
+            <circle cx="28" cy="28" r="3.2" fill="#1a3a7a"/><circle cx="28.8" cy="27.2" r="1.4" fill="#080818"/><circle cx="27.2" cy="26.5" r="0.9" fill="white"/>
+            <ellipse cx="45" cy="27" rx="5.5" ry="4.5" fill="white"/>
+            <circle cx="44" cy="28" r="3.2" fill="#1a3a7a"/><circle cx="44.8" cy="27.2" r="1.4" fill="#080818"/><circle cx="43.2" cy="26.5" r="0.9" fill="white"/>
+            <rect x="21" y="23" width="12" height="8" rx="3" fill="none" stroke="#8898b8" stroke-width="1.4"/>
+            <rect x="39" y="23" width="12" height="8" rx="3" fill="none" stroke="#8898b8" stroke-width="1.4"/>
+            <line x1="33" y1="27" x2="39" y2="27" stroke="#8898b8" stroke-width="1.4"/>
+            <line x1="21" y1="27" x2="18" y2="29" stroke="#8898b8" stroke-width="1.4"/>
+            <line x1="51" y1="27" x2="54" y2="29" stroke="#8898b8" stroke-width="1.4"/>
+            <path d="M34 35 Q36 39 38 35" stroke="#c8a880" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+            <path d="M27 43 Q36 48 45 43" stroke="#a08060" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          </svg>
+          <div class="status-dot sd-run"></div>
+        </div>
+        <div class="atag"><div class="aname">需求 Agent</div><div class="atokens">8.2K tok</div></div>
+      </div>
+
+      <!-- ── 设计 Agent (right) ── -->
+      <div class="agent" id="a2">
+        <div class="bubble active">#041 UI 规格输出中<div class="dots"><span></span><span></span><span></span></div></div>
+        <div class="avatar-ring run">
+          <svg viewBox="0 0 72 82" width="72" height="82" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="36" width="68" height="10" rx="5" fill="#3d3020"/><rect x="2" y="36" width="68" height="5" rx="5" fill="#4d4030" fill-opacity=".7"/><rect x="3" y="36" width="10" height="30" rx="4" fill="#2d2010"/><rect x="59" y="36" width="10" height="30" rx="4" fill="#2d2010"/>
+            <path d="M0 82 L0 64 Q8 58 28 56 L36 54 L44 56 Q64 58 72 64 L72 82 Z" fill="#7a30a0"/>
+            <path d="M30 47 Q36 52 42 47 L42 56 L30 56 Z" fill="#e8b080"/>
+            <ellipse cx="36" cy="29" rx="18" ry="19" fill="#e8b080"/>
+            <ellipse cx="18" cy="30" rx="3.5" ry="4.5" fill="#d09060"/>
+            <ellipse cx="54" cy="30" rx="3.5" ry="4.5" fill="#d09060"/>
+            <path d="M18 30 Q18 16 24 12 Q36 9 48 12 Q54 16 54 30 Q50 16 36 15 Q22 16 18 30Z" fill="#2a1035"/>
+            <ellipse cx="36" cy="8" rx="10" ry="9" fill="#2a1035"/>
+            <ellipse cx="36" cy="8" rx="7" ry="6" fill="#6030a0"/>
+            <path d="M22 20 Q27 18 31 20" stroke="#1a0825" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M41 20 Q45 18 50 20" stroke="#1a0825" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="27" cy="27" rx="6" ry="5" fill="white"/>
+            <circle cx="28" cy="28" r="3.5" fill="#2a5a2a"/><circle cx="29" cy="27.2" r="1.5" fill="#080808"/><circle cx="27.5" cy="26.5" r="1" fill="white"/>
+            <ellipse cx="45" cy="27" rx="6" ry="5" fill="white"/>
+            <circle cx="44" cy="28" r="3.5" fill="#2a5a2a"/><circle cx="45" cy="27.2" r="1.5" fill="#080808"/><circle cx="43.5" cy="26.5" r="1" fill="white"/>
+            <path d="M34 35 Q36 39 38 35" stroke="#c09060" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+            <path d="M26 42 Q36 49 46 42" stroke="#906040" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <circle cx="54" cy="26" r="2.5" fill="#ff80c0" fill-opacity="0.8"/>
+          </svg>
+          <div class="status-dot sd-run"></div>
+        </div>
+        <div class="atag"><div class="aname">设计 Agent</div><div class="atokens">15.7K tok</div></div>
+      </div>
+
+      <!-- ── 架构 Agent (bottom-right) ── -->
+      <div class="agent" id="a3">
+        <div class="bubble waiting">⏸ 等待架构评审审批</div>
+        <div class="avatar-ring wait">
+          <svg viewBox="0 0 72 82" width="72" height="82" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="36" width="68" height="10" rx="5" fill="#3d3020"/><rect x="2" y="36" width="68" height="5" rx="5" fill="#4d4030" fill-opacity=".7"/><rect x="3" y="36" width="10" height="30" rx="4" fill="#2d2010"/><rect x="59" y="36" width="10" height="30" rx="4" fill="#2d2010"/>
+            <path d="M0 82 L0 64 Q8 58 28 56 L36 54 L44 56 Q64 58 72 64 L72 82 Z" fill="#3a3a4a"/>
+            <path d="M24 56 L24 62 L48 62 L48 56" fill="#2a2a3a"/>
+            <path d="M30 47 Q36 52 42 47 L42 56 L30 56 Z" fill="#d4935a"/>
+            <ellipse cx="36" cy="29" rx="18" ry="19" fill="#d4935a"/>
+            <ellipse cx="18" cy="30" rx="3.5" ry="4.5" fill="#c07840"/>
+            <ellipse cx="54" cy="30" rx="3.5" ry="4.5" fill="#c07840"/>
+            <path d="M18 30 Q18 13 25 10 Q36 8 47 10 Q54 13 54 30 Q48 13 36 12 Q24 13 18 30Z" fill="#1c1c28"/>
+            <path d="M22 21 Q26 22.5 30 21" stroke="#12121e" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <path d="M42 21 Q46 22.5 50 21" stroke="#12121e" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="27" cy="27" rx="5.5" ry="4.5" fill="white"/>
+            <circle cx="28" cy="28" r="3.2" fill="#4a3020"/><circle cx="28.8" cy="27.2" r="1.4" fill="#080808"/><circle cx="27.2" cy="26.5" r="0.9" fill="white"/>
+            <ellipse cx="45" cy="27" rx="5.5" ry="4.5" fill="white"/>
+            <circle cx="44" cy="28" r="3.2" fill="#4a3020"/><circle cx="44.8" cy="27.2" r="1.4" fill="#080808"/><circle cx="43.2" cy="26.5" r="0.9" fill="white"/>
+            <rect x="20" y="23" width="13" height="8" rx="2" fill="none" stroke="#b0b8d0" stroke-width="1.5"/>
+            <rect x="39" y="23" width="13" height="8" rx="2" fill="none" stroke="#b0b8d0" stroke-width="1.5"/>
+            <line x1="33" y1="27" x2="39" y2="27" stroke="#b0b8d0" stroke-width="1.5"/>
+            <line x1="20" y1="27" x2="17" y2="29" stroke="#b0b8d0" stroke-width="1.5"/>
+            <line x1="52" y1="27" x2="55" y2="29" stroke="#b0b8d0" stroke-width="1.5"/>
+            <path d="M34 35 Q36 39 38 35" stroke="#a07040" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+            <path d="M28 43 Q36 45 44 43" stroke="#906030" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+          </svg>
+          <div class="status-dot sd-wait"></div>
+        </div>
+        <div class="appr-badge">待审批</div>
+        <div class="atag"><div class="aname">架构 Agent</div><div class="atokens">22.1K tok</div></div>
+      </div>
+
+      <!-- ── 开发 Agent (bottom) ── -->
+      <div class="agent" id="a4">
+        <div class="bubble active">#042 auth 模块编码<div class="dots"><span></span><span></span><span></span></div></div>
+        <div class="avatar-ring run">
+          <svg viewBox="0 0 72 82" width="72" height="82" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="36" width="68" height="10" rx="5" fill="#3d3020"/><rect x="2" y="36" width="68" height="5" rx="5" fill="#4d4030" fill-opacity=".7"/><rect x="3" y="36" width="10" height="30" rx="4" fill="#2d2010"/><rect x="59" y="36" width="10" height="30" rx="4" fill="#2d2010"/>
+            <path d="M0 82 L0 64 Q8 58 28 56 L36 54 L44 56 Q64 58 72 64 L72 82 Z" fill="#1e2e1e"/>
+            <path d="M36 54 L36 48" stroke="#2a4a2a" stroke-width="10" stroke-linecap="round"/>
+            <path d="M30 47 Q36 52 42 47 L42 56 L30 56 Z" fill="#c8905a"/>
+            <ellipse cx="36" cy="29" rx="18" ry="19" fill="#c8905a"/>
+            <ellipse cx="18" cy="30" rx="3.5" ry="4.5" fill="#b07840"/>
+            <ellipse cx="54" cy="30" rx="3.5" ry="4.5" fill="#b07840"/>
+            <path d="M18 29 Q19 12 26 9 Q36 6 46 9 Q53 12 54 29 Q48 13 36 13 Q22 14 18 29Z" fill="#2c1a0e"/>
+            <path d="M20 14 Q24 10 28 12" fill="#2c1a0e"/>
+            <path d="M36 8 Q39 5 41 8" fill="#2c1a0e"/>
+            <path d="M14 26 Q14 9 36 8 Q58 9 58 26" fill="none" stroke="#1a1a2e" stroke-width="5" stroke-linecap="round"/>
+            <ellipse cx="14" cy="28" rx="6" ry="7" fill="#2a2a40"/>
+            <ellipse cx="58" cy="28" rx="6" ry="7" fill="#2a2a40"/>
+            <path d="M22 21 Q25 22 28 21" stroke="#1e0e04" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M44 21 Q47 22 50 21" stroke="#1e0e04" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="27" cy="28" rx="5" ry="3.8" fill="white"/>
+            <circle cx="28" cy="28.5" r="2.8" fill="#2a1808"/><circle cx="28.6" cy="27.8" r="1.2" fill="#060606"/><circle cx="27.4" cy="27.2" r="0.8" fill="white"/>
+            <ellipse cx="45" cy="28" rx="5" ry="3.8" fill="white"/>
+            <circle cx="44" cy="28.5" r="2.8" fill="#2a1808"/><circle cx="44.6" cy="27.8" r="1.2" fill="#060606"/><circle cx="43.4" cy="27.2" r="0.8" fill="white"/>
+            <path d="M34 35 Q36 38 38 35" stroke="#a07040" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <path d="M28 43 Q36 46 44 43" stroke="#906030" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+          </svg>
+          <div class="status-dot sd-run"></div>
+        </div>
+        <div class="atag"><div class="aname">开发 Agent</div><div class="atokens">45.3K tok</div></div>
+      </div>
+
+      <!-- ── 测试 Agent (bottom-left) ── -->
+      <div class="agent" id="a5">
+        <div class="bubble active">#040 用例执行中<div class="dots"><span></span><span></span><span></span></div></div>
+        <div class="avatar-ring run">
+          <svg viewBox="0 0 72 82" width="72" height="82" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="36" width="68" height="10" rx="5" fill="#3d3020"/><rect x="2" y="36" width="68" height="5" rx="5" fill="#4d4030" fill-opacity=".7"/><rect x="3" y="36" width="10" height="30" rx="4" fill="#2d2010"/><rect x="59" y="36" width="10" height="30" rx="4" fill="#2d2010"/>
+            <path d="M0 82 L0 64 Q8 58 28 56 L36 54 L44 56 Q64 58 72 64 L72 82 Z" fill="#1a4848"/>
+            <path d="M30 47 Q36 52 42 47 L42 56 L30 56 Z" fill="#f0cca8"/>
+            <ellipse cx="36" cy="29" rx="18" ry="19" fill="#f0cca8"/>
+            <ellipse cx="18" cy="30" rx="3.5" ry="4.5" fill="#d8a880"/>
+            <ellipse cx="54" cy="30" rx="3.5" ry="4.5" fill="#d8a880"/>
+            <path d="M18 30 Q18 12 25 9 Q36 7 47 9 Q54 12 54 30 Q48 12 36 11 Q24 12 18 30Z" fill="#111118"/>
+            <path d="M22 22 Q26 23.5 30 22" stroke="#080808" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M42 22 Q46 23.5 50 22" stroke="#080808" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="27" cy="27" rx="5.5" ry="3.8" fill="white"/>
+            <circle cx="28" cy="27.8" r="2.8" fill="#1a1a1a"/><circle cx="28.6" cy="27" r="1.2" fill="#040404"/><circle cx="27.4" cy="26.4" r="0.8" fill="white"/>
+            <ellipse cx="45" cy="27" rx="5.5" ry="3.8" fill="white"/>
+            <circle cx="44" cy="27.8" r="2.8" fill="#1a1a1a"/><circle cx="44.6" cy="27" r="1.2" fill="#040404"/><circle cx="43.4" cy="26.4" r="0.8" fill="white"/>
+            <path d="M22 23.5 Q27 25 32 23.5" stroke="#080808" stroke-width="1.5" fill="none" opacity="0.5"/>
+            <path d="M40 23.5 Q45 25 50 23.5" stroke="#080808" stroke-width="1.5" fill="none" opacity="0.5"/>
+            <path d="M34 35 Q36 39 38 35" stroke="#c8a070" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+            <path d="M29 43 Q36 45 43 43" stroke="#a08050" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+          </svg>
+          <div class="status-dot sd-run"></div>
+        </div>
+        <div class="atag"><div class="aname">测试 Agent</div><div class="atokens">18.9K tok</div></div>
+      </div>
+
+      <!-- ── 部署 Agent (left) ── -->
+      <div class="agent" id="a6">
+        <div class="bubble" style="color:#484f58">待命，等待测试完成</div>
+        <div class="avatar-ring idle">
+          <svg viewBox="0 0 72 82" width="72" height="82" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="36" width="68" height="10" rx="5" fill="#3d3020"/><rect x="2" y="36" width="68" height="5" rx="5" fill="#4d4030" fill-opacity=".7"/><rect x="3" y="36" width="10" height="30" rx="4" fill="#2d2010"/><rect x="59" y="36" width="10" height="30" rx="4" fill="#2d2010"/>
+            <path d="M0 82 L0 64 Q8 58 28 56 L36 54 L44 56 Q64 58 72 64 L72 82 Z" fill="#5a7080"/>
+            <path d="M30 47 Q36 52 42 47 L42 56 L30 56 Z" fill="#f5d5b5"/>
+            <ellipse cx="36" cy="29" rx="18" ry="19" fill="#f5d5b5"/>
+            <ellipse cx="18" cy="30" rx="3.5" ry="4.5" fill="#e0c098"/>
+            <ellipse cx="54" cy="30" rx="3.5" ry="4.5" fill="#e0c098"/>
+            <path d="M18 29 Q19 13 27 10 Q32 8 36 9 Q40 8 45 10 Q53 13 54 29 Q48 15 40 14 Q36 13 32 14 Q24 15 18 29Z" fill="#9b7040"/>
+            <path d="M36 9 Q32 5 28 8 Q30 11 36 10Z" fill="#9b7040"/>
+            <path d="M36 9 Q40 5 44 8 Q42 11 36 10Z" fill="#9b7040"/>
+            <path d="M22 21 Q27 19.5 31 21" stroke="#6b4820" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+            <path d="M41 21 Q45 19.5 50 21" stroke="#6b4820" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+            <ellipse cx="27" cy="28" rx="5.5" ry="3.5" fill="white"/>
+            <path d="M21.5 26 Q27 24 32.5 26" stroke="#9b7040" stroke-width="2" fill="white"/>
+            <circle cx="28" cy="28.5" r="2.8" fill="#2a4a6a"/><circle cx="28.7" cy="27.8" r="1.2" fill="#080818"/><circle cx="27.4" cy="27.2" r="0.8" fill="white"/>
+            <ellipse cx="45" cy="28" rx="5.5" ry="3.5" fill="white"/>
+            <path d="M39.5 26 Q45 24 50.5 26" stroke="#9b7040" stroke-width="2" fill="white"/>
+            <circle cx="44" cy="28.5" r="2.8" fill="#2a4a6a"/><circle cx="44.7" cy="27.8" r="1.2" fill="#080818"/><circle cx="43.4" cy="27.2" r="0.8" fill="white"/>
+            <path d="M34 36 Q36 40 38 36" stroke="#c8a880" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+            <path d="M28 43 Q36 47 44 43" stroke="#a08860" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          </svg>
+          <div class="status-dot sd-idle"></div>
+        </div>
+        <div class="atag"><div class="aname">部署 Agent</div><div class="atokens" style="color:#484f58">2.1K tok</div></div>
+      </div>
+
+    </div><!-- /stage -->
+
+    <div class="cfooter">
+      橙色<span class="ndot"></span>标记 = 需要你审批 &nbsp;·&nbsp; 点击需求查看流水线详情
+    </div>
+
+    <div class="meeting-bar">
+      <div class="meeting-status">
+        <span class="pulse-dot" id="meetingDot"></span>
+        <span id="meetingState">悬停发言模式</span>
+        <span class="meeting-clock" id="meetingClock">00:00</span>
+      </div>
+      <div class="meeting-actions">
+        <button class="m-btn primary" id="btnStart">继续会议</button>
+        <button class="m-btn" id="btnPause">暂停</button>
+        <button class="m-btn" id="btnNext">全体汇报</button>
+      </div>
+    </div>
+
+
+  </div><!-- /cpanel -->
+
+  <!-- RIGHT -->
+  <div class="rpanel">
+    <div class="dhead">
+      <div class="drid" id="drid">#REQ-042 · P1 · 开发中</div>
+      <div class="dtitle" id="dtitle">用户登录与权限体系优化</div>
+    </div>
+    <div class="scroll">
+
+      <div class="approve-box" id="approveBox" style="display:none">
+        <div class="ab-title">⚠ 架构 Agent 在等你</div>
+        <div class="ab-desc">
+          #REQ-039 架构方案已完成，采用 JWT + RBAC 双层设计。
+          请确认后流水线自动继续，或打回说明修改意见。
+        </div>
+        <div class="ab-btns">
+          <button class="btn-ok">✓ 批准，继续</button>
+          <button class="btn-no">✗ 打回修改</button>
+        </div>
+      </div>
+
+      <div class="stages-blk">
+        <div class="blk-lbl">流水线进度</div>
+        <div class="srow">
+          <div class="si">📋</div>
+          <div class="sinfo"><div class="sn">需求分析</div><div class="sd">生成 8 个 User Story</div></div>
+          <span class="sbadge" style="background:#3fb95018;color:#3fb950">完成</span>
+          <span class="st">23m</span>
+        </div>
+        <div class="srow">
+          <div class="si">🎨</div>
+          <div class="sinfo"><div class="sn">产品设计</div><div class="sd">UI 规格 + 交互流程</div></div>
+          <span class="sbadge" style="background:#3fb95018;color:#3fb950">完成</span>
+          <span class="st">41m</span>
+        </div>
+        <div class="srow">
+          <div class="si">🏗️</div>
+          <div class="sinfo"><div class="sn">架构设计</div><div class="sd">JWT + RBAC 方案</div></div>
+          <span class="sbadge" style="background:#3fb95018;color:#3fb950">完成</span>
+          <span class="st">58m</span>
+        </div>
+        <div class="srow cur">
+          <div class="si">💻</div>
+          <div class="sinfo">
+            <div class="sn" style="color:#58a6ff">代码开发</div>
+            <div class="sd" style="color:#3fb950">▶ auth 模块进行中</div>
+          </div>
+          <span class="sbadge" style="background:#58a6ff18;color:#58a6ff">进行中</span>
+          <span class="st">34m</span>
+        </div>
+        <div class="srow dim">
+          <div class="si">🧪</div>
+          <div class="sinfo"><div class="sn">测试验证</div><div class="sd">等待开发完成</div></div>
+          <span class="sbadge" style="background:#30363d;color:#8b949e">等待</span>
+          <span class="st">—</span>
+        </div>
+        <div class="srow dim">
+          <div class="si">🚀</div>
+          <div class="sinfo"><div class="sn">部署上线</div><div class="sd">等待测试通过</div></div>
+          <span class="sbadge" style="background:#30363d;color:#8b949e">等待</span>
+          <span class="st">—</span>
+        </div>
+      </div>
+
+      <div class="mgrid">
+        <div class="mc"><div class="mcv">2h 34m</div><div class="mcl">总耗时</div></div>
+        <div class="mc"><div class="mcv" style="color:#58a6ff">62.4K</div><div class="mcl">Token 消耗</div></div>
+        <div class="mc"><div class="mcv" style="color:#3fb950">8 / 8</div><div class="mcl">Story 完成</div></div>
+        <div class="mc"><div class="mcv" style="color:#d29922">¥0.89</div><div class="mcl">预估成本</div></div>
+      </div>
+
+      <div class="minutes">
+        <div class="blk-lbl">会议纪要（实时）</div>
+        <div class="minutes-list" id="minutesList"></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ADD / EDIT REQUIREMENT MODAL -->
+<div class="modal-overlay" id="reqModal">
+  <div class="modal-box">
+    <div class="modal-title" id="reqModalTitle">新建需求</div>
+    <div class="mform-row">
+      <div class="mform-label">需求标题 *</div>
+      <input type="text" id="reqTitle" placeholder="用一句话描述需求">
+    </div>
+    <div class="mform-row">
+      <div class="mform-label">需求描述</div>
+      <textarea id="reqDesc" placeholder="背景、目标、验收标准…"></textarea>
+    </div>
+    <div class="mform-2col">
+      <div class="mform-row">
+        <div class="mform-label">优先级</div>
+        <select id="reqPri">
+          <option value="p1">P1 — 紧急</option>
+          <option value="p2" selected>P2 — 重要</option>
+          <option value="p3">P3 — 一般</option>
+        </select>
+      </div>
+      <div class="mform-row">
+        <div class="mform-label">负责人</div>
+        <input type="text" id="reqOwner" placeholder="姓名">
+      </div>
+    </div>
+    <div class="mform-row">
+      <div class="mform-label">流水线模板</div>
+      <div class="modal-tpl" id="reqTplGroup">
+        <label class="tpl-opt sel" onclick="selectTpl(this)"><input type="radio" name="tpl" value="full">📋 完整流程</label>
+        <label class="tpl-opt" onclick="selectTpl(this)"><input type="radio" name="tpl" value="bug">🐛 Bug 修复</label>
+        <label class="tpl-opt" onclick="selectTpl(this)"><input type="radio" name="tpl" value="quick">⚡ 快速变更</label>
+        <label class="tpl-opt" onclick="selectTpl(this)"><input type="radio" name="tpl" value="custom">🔧 自定义</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="mbtn-cancel" onclick="closeReqModal()">取消</button>
+      <button class="mbtn-ok" onclick="saveReq()">保存需求</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="modal-overlay" id="delModal">
+  <div class="modal-box del-modal">
+    <div class="modal-title">确认删除</div>
+    <div class="del-desc" id="delModalDesc">确定要删除此需求吗？此操作不可撤销。</div>
+    <div class="modal-footer">
+      <button class="mbtn-cancel" onclick="closeDelModal()">取消</button>
+      <button class="mbtn-del" onclick="confirmDeleteReq()">删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ANGLES = [-90, -39, 12, 63, 116, 167, -141];
+const RADIUS = 192;
+const AGENT_NAMES = ['指挥官', '需求 Agent', '设计 Agent', '架构 Agent', '开发 Agent', '测试 Agent', '部署 Agent'];
+
+const reqMeta = {
+  '#REQ-042': { rid: '#REQ-042 · P1 · 开发中', title: '用户登录与权限体系优化' },
+  '#REQ-041': { rid: '#REQ-041 · P2 · 设计中', title: '消息通知中心重构' },
+  '#REQ-040': { rid: '#REQ-040 · P2 · 测试中', title: '报表筛选条件持久化' },
+  '#REQ-039': { rid: '#REQ-039 · P1 · 等待审批', title: '数据导出 — 支持 Excel / CSV' },
+  '#REQ-038': { rid: '#REQ-038 · P3 · 分析中', title: '移动端适配优化' }
+};
+
+const turnScript = [
+  { agent: 0, req: '#REQ-042', bubble: '我们先压缩交付路径', kind: 'active', table: '议程对齐', sub: '聚焦阻塞项与决策', note: '指挥官确认本轮目标：先完成 auth 关键路径，再处理边缘故事。', cost: '¥0.92', elapsed: '2h 36m' },
+  { agent: 1, req: '#REQ-038', bubble: '边界场景已补齐 6 项', kind: 'active', table: '需求澄清', sub: '验收标准逐条锁定', note: '需求 Agent 补充移动端异常网络与离线重试场景，验收标准可直接测试。', cost: '¥0.95', elapsed: '2h 39m' },
+  { agent: 2, req: '#REQ-041', bubble: '我给出交互动效稿', kind: 'active', table: '设计评审', sub: '低保真到高保真过稿', note: '设计 Agent 提交通知中心动效规范，确认列表与详情转场时序。', cost: '¥0.98', elapsed: '2h 43m' },
+  { agent: 3, req: '#REQ-039', bubble: '这里需要你拍板', kind: 'waiting', table: '架构决策', sub: '待审批后继续流水线', note: '架构 Agent 提请审批 JWT 与 RBAC 方案，等待负责人最终确认。', cost: '¥1.03', elapsed: '2h 47m', approve: true },
+  { agent: 4, req: '#REQ-042', bubble: '核心模块已可联调', kind: 'active', table: '开发联调', sub: '主流程打通', note: '开发 Agent 完成登录与角色校验主链路，准备进入回归测试。', cost: '¥1.12', elapsed: '2h 52m' },
+  { agent: 5, req: '#REQ-040', bubble: '回归通过率 94%', kind: 'active', table: '测试回放', sub: '缺陷收敛中', note: '测试 Agent 已执行核心回归，发现 1 个低优先级 UI 缺陷。', cost: '¥1.21', elapsed: '2h 58m' },
+  { agent: 6, req: '#REQ-042', bubble: '我准备发版窗口', kind: 'human', table: '发布准备', sub: '等待最终确认', note: '部署 Agent 已准备灰度发布窗口与回滚预案，待会议最终口头确认。', cost: '¥1.29', elapsed: '3h 02m' }
+];
+
+let meetingSeconds = 0;
+let meetingRunning = true;
+let lastHoverAgent = -1;
+const hoverTimers = {};
+
+function layoutAgents() {
+  const stage = document.getElementById('stage');
+  const cx = stage.offsetWidth / 2;
+  const cy = stage.offsetHeight / 2;
+
+  ANGLES.forEach((deg, i) => {
+    const el = document.getElementById('a' + i);
+    if (!el) return;
+    const rad = deg * Math.PI / 180;
+    el.style.left = (cx + RADIUS * Math.cos(rad)) + 'px';
+    el.style.top = (cy + RADIUS * Math.sin(rad)) + 'px';
+  });
+
+  drawLines(cx, cy);
+}
+
+function drawLines(cx, cy) {
+  const svg = document.getElementById('connSvg');
+  svg.querySelectorAll('line').forEach(l => l.remove());
+
+  const colors = ['#3fb950', '#3fb950', '#3fb950', '#d29922', '#3fb950', '#3fb950', '#484f58'];
+  const opacities = [0.35, 0.25, 0.25, 0.3, 0.25, 0.25, 0.1];
+
+  ANGLES.forEach((deg, i) => {
+    const rad = deg * Math.PI / 180;
+    const factor = 0.55;
+    const x2 = cx + (RADIUS * factor) * Math.cos(rad);
+    const y2 = cy + (RADIUS * factor) * Math.sin(rad);
+    const x1 = cx + 88 * Math.cos(rad);
+    const y1 = cy + 88 * Math.sin(rad);
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    line.setAttribute('stroke', colors[i]);
+    line.setAttribute('stroke-opacity', opacities[i]);
+    line.setAttribute('stroke-width', i === 0 ? '2' : '1');
+    line.setAttribute('stroke-dasharray', i === 6 ? '4 4' : 'none');
+    svg.appendChild(line);
+  });
+}
+
+function setRole(tab) {
+  document.querySelectorAll('.rtab').forEach(t => t.classList.remove('on'));
+  tab.classList.add('on');
+}
+
+function selReq(card, showApprove) {
+  document.querySelectorAll('.rcard').forEach(c => c.classList.remove('sel'));
+  card.classList.add('sel');
+  document.getElementById('approveBox').style.display = showApprove ? 'block' : 'none';
+}
+
+function formatClock(sec) {
+  const m = String(Math.floor(sec / 60)).padStart(2, '0');
+  const s = String(sec % 60).padStart(2, '0');
+  return m + ':' + s;
+}
+
+function resetAgentsToIdle() {
+  for (let i = 0; i < AGENT_NAMES.length; i++) {
+    const root = document.getElementById('a' + i);
+    if (!root) continue;
+    root.classList.remove('speaking');
+
+    const bubble = root.querySelector('.bubble');
+    const ring = root.querySelector('.avatar-ring');
+    const dot = root.querySelector('.status-dot');
+
+    if (bubble && bubble.dataset.defaultText) {
+      bubble.textContent = bubble.dataset.defaultText;
+    }
+    if (bubble) {
+      bubble.classList.remove('active', 'waiting', 'stuck', 'human');
+    }
+    if (ring) {
+      ring.classList.remove('run', 'wait', 'idle');
+      ring.classList.add('idle');
+    }
+    if (dot) {
+      dot.className = 'status-dot sd-idle';
+    }
+  }
+}
+
+function syncReqSelection(reqId, approve) {
+  const cards = Array.from(document.querySelectorAll('.rcard'));
+  cards.forEach(c => c.classList.remove('sel'));
+  const target = cards.find(c => (c.querySelector('.rid') || {}).textContent === reqId);
+  if (target) {
+    target.classList.add('sel');
+  }
+  document.getElementById('approveBox').style.display = approve ? 'block' : 'none';
+}
+
+function addMinute(role, content) {
+  const list = document.getElementById('minutesList');
+  if (!list) return;
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+
+  const item = document.createElement('div');
+  item.className = 'minute';
+  item.innerHTML = '<div class="minute-h"><span>' + hh + ':' + mm + '</span><span class="minute-r">' + role + '</span></div><div class="minute-c">' + content + '</div>';
+
+  list.prepend(item);
+  while (list.children.length > 8) {
+    list.removeChild(list.lastChild);
+  }
+}
+
+function getTurnByAgent(agentIndex) {
+  return turnScript.find(t => t.agent === agentIndex) || {
+    agent: agentIndex,
+    req: '#REQ-042',
+    bubble: '我补充当前结论',
+    kind: 'human',
+    table: '人工汇报',
+    sub: '悬停触发发言',
+    note: AGENT_NAMES[agentIndex] + ' 按主持人点名完成汇报。',
+    cost: '¥1.31',
+    elapsed: '3h 05m'
+  };
+}
+
+function setAgentVisual(agentIndex, turn) {
+  const root = document.getElementById('a' + agentIndex);
+  if (!root) return;
+
+  const bubble = root.querySelector('.bubble');
+  const ring = root.querySelector('.avatar-ring');
+  const dot = root.querySelector('.status-dot');
+
+  root.classList.add('speaking');
+
+  if (bubble) {
+    bubble.textContent = turn.bubble;
+    bubble.classList.remove('active', 'waiting', 'stuck', 'human');
+    bubble.classList.add(turn.kind || 'active');
+  }
+  if (ring) {
+    ring.classList.remove('run', 'wait', 'idle');
+    ring.classList.add(turn.kind === 'waiting' ? 'wait' : 'run');
+  }
+  if (dot) {
+    dot.className = 'status-dot ' + (turn.kind === 'waiting' ? 'sd-wait' : (turn.kind === 'human' ? 'sd-hum' : 'sd-run'));
+  }
+}
+
+function restoreAgentStandby(agentIndex) {
+  const root = document.getElementById('a' + agentIndex);
+  if (!root) return;
+
+  const bubble = root.querySelector('.bubble');
+  const ring = root.querySelector('.avatar-ring');
+  const dot = root.querySelector('.status-dot');
+
+  root.classList.remove('speaking');
+
+  if (bubble && bubble.dataset.defaultText) {
+    bubble.textContent = bubble.dataset.defaultText;
+  }
+  if (bubble) {
+    bubble.classList.remove('active', 'waiting', 'stuck', 'human');
+  }
+  if (ring) {
+    ring.classList.remove('run', 'wait', 'idle');
+    ring.classList.add('idle');
+  }
+  if (dot) {
+    dot.className = 'status-dot sd-idle';
+  }
+}
+
+function runTurn(turn, addLog) {
+  resetAgentsToIdle();
+  setAgentVisual(turn.agent, turn);
+
+  const meta = reqMeta[turn.req] || { rid: turn.req, title: '需求' };
+  document.getElementById('drid').textContent = meta.rid;
+  document.getElementById('dtitle').textContent = meta.title;
+
+  document.querySelector('.ts-status').textContent = turn.table;
+  document.querySelector('.ts-sub').textContent = turn.sub;
+
+  syncReqSelection(turn.req, !!turn.approve);
+
+  const metricCards = document.querySelectorAll('.mgrid .mc .mcv');
+  if (metricCards[0]) metricCards[0].textContent = turn.elapsed;
+  if (metricCards[3]) metricCards[3].textContent = turn.cost;
+
+  if (addLog) {
+    addMinute(AGENT_NAMES[turn.agent], turn.note);
+  }
+}
+
+function reportAllAgents() {
+  if (!meetingRunning) return;
+
+  resetAgentsToIdle();
+  document.querySelector('.ts-status').textContent = '全体汇报';
+  document.querySelector('.ts-sub').textContent = '7 位 Agent 正在同步播报';
+  document.getElementById('drid').textContent = 'ALL-HANDS · 实时同步中';
+  document.getElementById('dtitle').textContent = '全部 Agent 已上麦汇报当前进展';
+
+  const cards = Array.from(document.querySelectorAll('.rcard'));
+  cards.forEach(c => c.classList.remove('sel'));
+  document.getElementById('approveBox').style.display = 'none';
+
+  const metricCards = document.querySelectorAll('.mgrid .mc .mcv');
+  if (metricCards[0]) metricCards[0].textContent = '3h 10m';
+  if (metricCards[3]) metricCards[3].textContent = '¥1.36';
+
+  turnScript.forEach(turn => {
+    setAgentVisual(turn.agent, turn);
+    addMinute(AGENT_NAMES[turn.agent], turn.note);
+  });
+}
+
+function setMeetingRunning(running) {
+  meetingRunning = running;
+  document.getElementById('meetingState').textContent = running ? '悬停发言模式' : '会议已暂停';
+  document.getElementById('meetingDot').style.background = running ? '#3fb950' : '#d29922';
+}
+
+function initAgentDefaults() {
+  for (let i = 0; i < AGENT_NAMES.length; i++) {
+    const root = document.getElementById('a' + i);
+    if (!root) continue;
+
+    const bubble = root.querySelector('.bubble');
+    if (bubble && !bubble.dataset.defaultText) {
+      bubble.dataset.defaultText = bubble.textContent;
+    }
+
+    root.addEventListener('mouseenter', () => {
+      if (!meetingRunning) return;
+
+      clearTimeout(hoverTimers[i]);
+      hoverTimers[i] = setTimeout(() => {
+        if (!meetingRunning || lastHoverAgent === i) return;
+        lastHoverAgent = i;
+        runTurn(getTurnByAgent(i), true);
+      }, 300);
+    });
+
+    root.addEventListener('mouseleave', () => {
+      clearTimeout(hoverTimers[i]);
+      if (lastHoverAgent === i) {
+        restoreAgentStandby(i);
+        lastHoverAgent = -1;
+      }
+    });
+  }
+}
+
+layoutAgents();
+window.addEventListener('resize', layoutAgents);
+initAgentDefaults();
+runTurn(getTurnByAgent(0), true);
+
+setInterval(() => {
+  if (meetingRunning) {
+    meetingSeconds += 1;
+    document.getElementById('meetingClock').textContent = formatClock(meetingSeconds);
+  }
+}, 1000);
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  setMeetingRunning(true);
+  lastHoverAgent = -1;
+  runTurn(getTurnByAgent(0), true);
+});
+
+document.getElementById('btnPause').addEventListener('click', () => {
+  setMeetingRunning(false);
+});
+
+document.getElementById('btnNext').addEventListener('click', () => {
+  reportAllAgents();
+});
+
+// ══ BREADCRUMB ══
+(function () {
+  const name = sessionStorage.getItem('projectName');
+  const el = document.getElementById('breadProject');
+  if (el && name) el.textContent = name;
+})();
+
+// ══ REQUIREMENT CRUD ══
+let reqIdCounter = 43;
+let editingReqId = null;
+let pendingDeleteId = null;
+
+const tplSteps = {
+  full:   ['done','done','done','run','',''],
+  bug:    ['done','run','','','',''],
+  quick:  ['done','done','run','','',''],
+  custom: ['run','','','','',' ']
+};
+const priLabel = { p1: 'P1', p2: 'P2', p3: 'P3' };
+const priCls   = { p1: 'p1', p2: 'p2', p3: 'p3' };
+
+function initReqCards() {
+  const list = document.getElementById('reqList');
+  if (!list) return;
+  list.querySelectorAll('.rcard').forEach(function (card) {
+    const ridEl = card.querySelector('.rid');
+    if (!ridEl) return;
+    const reqId = ridEl.textContent.replace('#', '');
+    card.dataset.reqId = reqId;
+    // infer status
+    const metaText = Array.from(card.querySelectorAll('.rmeta span')).map(function(s){ return s.textContent; }).join(' ');
+    card.dataset.status = (metaText.includes('待审批') || card.classList.contains('jammed')) ? 'wait' : 'run';
+    // inject actions
+    const div = document.createElement('div');
+    div.className = 'rcard-actions';
+    div.innerHTML =
+      '<span class="rca-btn" onclick="event.stopPropagation();openEditReqModal(\'' + reqId + '\')" title="编辑">✏</span>' +
+      '<span class="rca-btn del" onclick="event.stopPropagation();openDeleteReqModal(\'' + reqId + '\')" title="删除">🗑</span>';
+    card.appendChild(div);
+  });
+}
+
+function filterReqs(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('#reqList .rcard').forEach(function (card) {
+    const title = (card.querySelector('.rtitle') || {}).textContent || '';
+    const rid   = (card.querySelector('.rid')    || {}).textContent || '';
+    card.style.display = (title.toLowerCase().includes(q) || rid.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+
+function filterByStatus(btn, status) {
+  document.querySelectorAll('.lf-btn').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+  document.querySelectorAll('#reqList .rcard').forEach(function (card) {
+    card.style.display = (status === 'all' || card.dataset.status === status) ? '' : 'none';
+  });
+}
+
+function updateReqCount() {
+  const el = document.getElementById('reqCount');
+  const list = document.getElementById('reqList');
+  if (el && list) el.textContent = list.querySelectorAll('.rcard').length;
+}
+
+// ── Add / Edit Modal ──
+function openAddReqModal() {
+  editingReqId = null;
+  document.getElementById('reqModalTitle').textContent = '新建需求';
+  document.getElementById('reqTitle').value = '';
+  document.getElementById('reqDesc').value  = '';
+  document.getElementById('reqOwner').value = '';
+  document.getElementById('reqPri').value   = 'p2';
+  document.querySelectorAll('.tpl-opt').forEach(function(el, i){ el.classList.toggle('sel', i === 0); });
+  document.getElementById('reqModal').classList.add('open');
+  setTimeout(function(){ document.getElementById('reqTitle').focus(); }, 80);
+}
+
+function openEditReqModal(reqId) {
+  editingReqId = reqId;
+  const card = document.querySelector('[data-req-id="' + reqId + '"]');
+  document.getElementById('reqModalTitle').textContent = '编辑需求';
+  document.getElementById('reqTitle').value = card ? ((card.querySelector('.rtitle') || {}).textContent || '') : '';
+  document.getElementById('reqDesc').value  = '';
+  document.getElementById('reqOwner').value = '';
+  if (card) {
+    const priEl = card.querySelector('.rpri');
+    const p = priEl && priEl.classList.contains('p1') ? 'p1' : priEl && priEl.classList.contains('p3') ? 'p3' : 'p2';
+    document.getElementById('reqPri').value = p;
+  }
+  document.querySelectorAll('.tpl-opt').forEach(function(el, i){ el.classList.toggle('sel', i === 0); });
+  document.getElementById('reqModal').classList.add('open');
+  setTimeout(function(){ document.getElementById('reqTitle').focus(); }, 80);
+}
+
+function closeReqModal() {
+  document.getElementById('reqModal').classList.remove('open');
+  editingReqId = null;
+}
+
+function selectTpl(label) {
+  document.querySelectorAll('.tpl-opt').forEach(function(el){ el.classList.remove('sel'); });
+  label.classList.add('sel');
+}
+
+function saveReq() {
+  const title = document.getElementById('reqTitle').value.trim();
+  if (!title) { document.getElementById('reqTitle').focus(); return; }
+  const pri  = document.getElementById('reqPri').value;
+  const tplEl = document.querySelector('.tpl-opt.sel input');
+  const tpl  = tplEl ? tplEl.value : 'full';
+  const steps = tplSteps[tpl] || tplSteps.full;
+  const list  = document.getElementById('reqList');
+  if (!list) return;
+
+  if (editingReqId) {
+    const card = list.querySelector('[data-req-id="' + editingReqId + '"]');
+    if (card) {
+      const titleEl = card.querySelector('.rtitle');
+      if (titleEl) titleEl.textContent = title;
+      const priEl = card.querySelector('.rpri');
+      if (priEl) { priEl.textContent = priLabel[pri]; priEl.className = 'rpri ' + priCls[pri]; }
+    }
+  } else {
+    const newId = 'REQ-0' + (reqIdCounter++);
+    const barHtml = steps.map(function(s){ return '<div class="rd' + (s ? ' ' + s : '') + '"></div>'; }).join('');
+    const card = document.createElement('div');
+    card.className = 'rcard';
+    card.dataset.reqId = newId;
+    card.dataset.status = 'queue';
+    card.innerHTML =
+      '<div class="rt-top"><span class="rid">#' + newId + '</span><span class="rpri ' + priCls[pri] + '">' + priLabel[pri] + '</span></div>' +
+      '<div class="rtitle">' + title + '</div>' +
+      '<div class="rbar">' + barHtml + '</div>' +
+      '<div class="rmeta"><span>待启动</span><span>—</span></div>' +
+      '<div class="rcard-actions">' +
+        '<span class="rca-btn" onclick="event.stopPropagation();openEditReqModal(\'' + newId + '\')" title="编辑">✏</span>' +
+        '<span class="rca-btn del" onclick="event.stopPropagation();openDeleteReqModal(\'' + newId + '\')" title="删除">🗑</span>' +
+      '</div>';
+    card.onclick = function () { selReq(card, false); };
+    list.appendChild(card);
+    updateReqCount();
+  }
+  closeReqModal();
+}
+
+// ── Delete Modal ──
+function openDeleteReqModal(reqId) {
+  pendingDeleteId = reqId;
+  const card  = document.querySelector('[data-req-id="' + reqId + '"]');
+  const title = card ? ((card.querySelector('.rtitle') || {}).textContent || reqId) : reqId;
+  document.getElementById('delModalDesc').textContent = '确定要删除需求「' + title + '」吗？此操作不可撤销。';
+  document.getElementById('delModal').classList.add('open');
+}
+
+function closeDelModal() {
+  document.getElementById('delModal').classList.remove('open');
+  pendingDeleteId = null;
+}
+
+function confirmDeleteReq() {
+  if (!pendingDeleteId) return;
+  const card = document.querySelector('[data-req-id="' + pendingDeleteId + '"]');
+  if (card) card.remove();
+  updateReqCount();
+  closeDelModal();
+}
+
+document.getElementById('reqModal').addEventListener('click', function (e) {
+  if (e.target === this) closeReqModal();
+});
+document.getElementById('delModal').addEventListener('click', function (e) {
+  if (e.target === this) closeDelModal();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { closeReqModal(); closeDelModal(); }
+});
+
+initReqCards();
+</script>
+
+</body>
+</html>

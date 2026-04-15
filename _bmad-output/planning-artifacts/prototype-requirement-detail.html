@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-DZHT — 需求详情 v2</title>
+<style>
+/* ══ RESET & BASE ══ */
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:-apple-system,'PingFang SC','Microsoft YaHei',monospace;
+  background:#060b12;color:#c9d1d9;
+  height:100vh;overflow:hidden;display:flex;flex-direction:column;
+  --cyan:#00d4ff;--purple:#9b59ff;--green:#0aff7a;--amber:#ffaa00;
+  --red:#ff4466;--dim:#1a2332;--border:#1e3040;
+}
+
+/* ══ TOP NAV ══ */
+.topnav{
+  height:50px;background:#0a1220;border-bottom:1px solid #1e3040;
+  display:flex;align-items:center;padding:0 20px;gap:0;flex-shrink:0;
+  position:relative;
+}
+.topnav::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,#00d4ff44,transparent);
+}
+.logo{font-size:16px;font-weight:800;color:#00d4ff;letter-spacing:2px;margin-right:32px;font-family:monospace;}
+.logo em{color:#0aff7a;font-style:normal;}
+.navlink{
+  padding:6px 14px;border-radius:4px;font-size:12px;
+  cursor:pointer;color:#4a6070;transition:all .15s;letter-spacing:.5px;
+}
+.navlink:hover{color:#c9d1d9;background:#0d1a28;}
+.navlink.active{color:#00d4ff;background:#0d2030;border-bottom:2px solid #00d4ff;}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.user-badge{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 12px;border-radius:3px;font-size:11px;font-weight:700;
+  background:#150a30;border:1px solid #9b59ff66;color:#c084fc;
+  font-family:monospace;letter-spacing:.5px;
+}
+.pulse-dot{width:6px;height:6px;border-radius:50%;background:#9b59ff;animation:pls 2s infinite;}
+
+/* ══ MAIN ══ */
+.main{display:flex;flex:1;overflow:hidden;}
+
+/* ══ WORKSPACE ══ */
+.workspace{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+
+/* ══ REQ HEADER ══ */
+.req-header{
+  background:#0a1220;border-bottom:1px solid #1e3040;
+  padding:12px 22px;flex-shrink:0;
+}
+.breadcrumb{font-size:11px;color:#3a5060;margin-bottom:5px;font-family:monospace;}
+.breadcrumb span{color:#00d4ff88;cursor:pointer;}
+.breadcrumb span:hover{color:#00d4ff;}
+.req-title-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.req-title{font-size:18px;font-weight:800;color:#e6edf3;letter-spacing:.5px;}
+.status-pill{
+  padding:2px 10px;border-radius:2px;font-size:10px;font-weight:800;
+  background:#002820;color:#0aff7a;border:1px solid #0aff7a66;
+  font-family:monospace;letter-spacing:1px;animation:pls-green 2s infinite;
+}
+.req-meta{display:flex;gap:22px;font-size:11px;color:#3a5060;font-family:monospace;}
+.meta-v{color:#00d4ff;}
+.meta-w{color:#ffaa00;}
+.meta-g{color:#0aff7a;}
+
+/* ══ SCROLLABLE CONTENT ══ */
+.content{flex:1;overflow-y:auto;padding:16px 22px;display:flex;flex-direction:column;gap:16px;}
+
+/* ══════════════════════════════════════
+   PIPELINE VISUALIZATION
+══════════════════════════════════════ */
+.pipeline-section{
+  background:#0a1220;border:1px solid #1e3040;border-radius:8px;
+  padding:16px 20px;flex-shrink:0;
+}
+.section-label{
+  font-size:10px;font-weight:800;color:#3a5060;letter-spacing:1.5px;
+  text-transform:uppercase;font-family:monospace;margin-bottom:14px;
+  display:flex;align-items:center;gap:8px;
+}
+.section-label::after{content:'';flex:1;height:1px;background:#1e3040;}
+
+.pipeline-flow{
+  display:flex;align-items:center;gap:0;overflow-x:auto;padding-bottom:4px;
+}
+
+/* Stage node */
+.stage-node{
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  flex-shrink:0;min-width:100px;
+}
+.stage-box{
+  width:88px;padding:8px 6px;border-radius:6px;
+  background:#0d1a28;border:1px solid #1e3040;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  position:relative;cursor:pointer;transition:all .2s;
+}
+.stage-box:hover{border-color:#00d4ff44;}
+
+/* Stage states */
+.stage-box.done{border-color:#0aff7a44;background:#002820;}
+.stage-box.active{
+  border-color:#00d4ff;background:#001a2e;
+  box-shadow:0 0 0 1px #00d4ff33,0 0 20px #00d4ff22;
+  animation:active-stage-glow 2s ease-in-out infinite;
+}
+.stage-box.pending{opacity:0.45;}
+.stage-box.parallel{border-color:#9b59ff66;background:#100a1e;}
+
+.stage-icon{font-size:16px;line-height:1;}
+.stage-name{font-size:10px;font-weight:700;text-align:center;color:#8b949e;font-family:monospace;}
+.stage-box.done .stage-name{color:#0aff7a;}
+.stage-box.active .stage-name{color:#00d4ff;}
+.stage-box.parallel .stage-name{color:#c084fc;}
+
+.stage-status{font-size:9px;font-family:monospace;text-align:center;}
+.stage-box.done .stage-status{color:#0aff7a99;}
+.stage-box.active .stage-status{color:#00d4ffaa;}
+.stage-box.pending .stage-status{color:#3a506099;}
+.stage-box.parallel .stage-status{color:#c084fc99;}
+
+/* Active stage scan line */
+.stage-box.active::after{
+  content:'';position:absolute;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,#00d4ff,transparent);
+  animation:scan 2s linear infinite;top:0;
+}
+@keyframes scan{0%{top:0;opacity:1}100%{top:100%;opacity:0}}
+
+/* Parallel sub-label */
+.parallel-sub{
+  display:flex;gap:3px;margin-top:2px;
+}
+.psub{
+  width:6px;height:6px;border-radius:50%;
+}
+
+/* Connector arrow */
+.pipe-arrow{
+  display:flex;align-items:center;flex-shrink:0;
+  width:28px;position:relative;height:3px;
+}
+.pipe-arrow::before{
+  content:'';position:absolute;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,#1e3040,#2a4060,#1e3040);
+}
+.pipe-arrow.lit::before{background:linear-gradient(90deg,#0aff7a66,#00d4ff,#9b59ff44);}
+.arrow-tip{
+  position:absolute;right:0;
+  border-left:5px solid #1e3040;
+  border-top:4px solid transparent;
+  border-bottom:4px solid transparent;
+}
+.pipe-arrow.lit .arrow-tip{border-left-color:#00d4ff;}
+
+/* Flowing dot along connector */
+.flow-dot{
+  position:absolute;width:5px;height:5px;border-radius:50%;
+  background:#00d4ff;box-shadow:0 0 6px #00d4ff;
+  animation:flow-move 1.5s linear infinite;top:-2px;
+}
+@keyframes flow-move{0%{left:0;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:calc(100% - 5px);opacity:0}}
+
+/* ══════════════════════════════════════
+   COMMANDER STRIP
+══════════════════════════════════════ */
+.cmd-strip{
+  background:#0a1220;border:1px solid #1e3040;border-radius:8px;
+  padding:12px 20px;display:flex;align-items:center;gap:18px;
+}
+.cmd-avatar-wrap{flex-shrink:0;}
+.cmd-text{flex:1;}
+.cmd-text h3{font-size:13px;font-weight:700;color:#c9d1d9;margin-bottom:3px;}
+.cmd-text p{font-size:11px;color:#4a6070;line-height:1.6;}
+.cmd-kpis{display:flex;gap:16px;margin-left:auto;flex-shrink:0;}
+.kpi{text-align:center;}
+.kpi-v{font-size:20px;font-weight:800;font-family:monospace;}
+.kpi-l{font-size:9px;color:#3a5060;margin-top:1px;letter-spacing:.5px;text-transform:uppercase;}
+
+/* ══════════════════════════════════════
+   STORIES GRID
+══════════════════════════════════════ */
+.stories-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:14px;
+}
+.story-card{
+  background:#0a1220;border:1px solid #1e3040;border-radius:8px;
+  display:flex;flex-direction:column;gap:10px;padding:14px;
+  transition:border-color .2s;
+}
+.story-card.active{border-color:#00d4ff44;box-shadow:0 0 20px #00d4ff11;}
+.story-card.done{border-color:#0aff7a33;}
+
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;}
+.card-id{font-size:10px;color:#3a5060;font-family:monospace;margin-bottom:3px;}
+.card-name{font-size:13px;font-weight:700;color:#c9d1d9;}
+.badge{padding:2px 8px;border-radius:2px;font-size:9px;font-weight:800;font-family:monospace;letter-spacing:.5px;}
+.b-active{background:#001a2e;color:#00d4ff;border:1px solid #00d4ff55;}
+.b-done{background:#002820;color:#0aff7a;border:1px solid #0aff7a55;}
+
+/* ══════════════════════════════════════
+   AGENT HOLOGRAM STAGE
+══════════════════════════════════════ */
+.agent-stage{
+  background:#060b12;border:1px solid #1a2a3a;border-radius:6px;
+  display:flex;flex-direction:column;align-items:center;
+  padding:14px 10px 10px;gap:5px;
+  min-height:175px;justify-content:center;position:relative;overflow:hidden;
+}
+/* Scan grid bg */
+.agent-stage::before{
+  content:'';position:absolute;inset:0;opacity:0.06;
+  background-image:
+    linear-gradient(#00d4ff 1px,transparent 1px),
+    linear-gradient(90deg,#00d4ff 1px,transparent 1px);
+  background-size:20px 20px;
+}
+.agent-stage.a-active{
+  border-color:#00d4ff55;
+  box-shadow:0 0 0 1px #00d4ff22, inset 0 0 30px #00d4ff08;
+}
+.agent-stage.a-active::before{opacity:0.1;}
+.agent-stage.a-done{border-color:#0aff7a33;}
+.agent-stage.a-amber{border-color:#ffaa0044;}
+.agent-stage.a-amber.a-active::before{
+  background-image:
+    linear-gradient(#ffaa00 1px,transparent 1px),
+    linear-gradient(90deg,#ffaa00 1px,transparent 1px);
+  background-size:20px 20px;
+}
+
+/* Top accent */
+.stage-top-bar{
+  position:absolute;top:0;left:0;right:0;height:2px;border-radius:8px 8px 0 0;
+}
+.bar-cyan{background:linear-gradient(90deg,transparent,#00d4ff,transparent);}
+.bar-green{background:linear-gradient(90deg,transparent,#0aff7a,transparent);}
+.bar-amber{background:linear-gradient(90deg,transparent,#ffaa00,transparent);}
+
+/* Token badge */
+.tok{
+  position:absolute;top:7px;right:7px;
+  font-size:9px;color:#4a6070;font-family:monospace;
+  background:#060b12;padding:2px 5px;border-radius:3px;border:1px solid #1a2a3a;
+}
+
+.agent-lbl{font-size:11px;font-weight:800;font-family:monospace;letter-spacing:.5px;}
+.agent-task{font-size:10px;color:#3a5060;text-align:center;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* Activity dots */
+.dots{display:flex;gap:4px;margin-top:2px;}
+.d{width:5px;height:5px;border-radius:50%;animation:dbounce 1.2s ease-in-out infinite;}
+.d:nth-child(2){animation-delay:.2s;}
+.d:nth-child(3){animation-delay:.4s;}
+@keyframes dbounce{0%,80%,100%{transform:translateY(0);opacity:.3}40%{transform:translateY(-5px);opacity:1}}
+
+/* ══════════════════════════════════════
+   PROGRESS
+══════════════════════════════════════ */
+.prog-row{display:flex;justify-content:space-between;font-size:10px;color:#3a5060;font-family:monospace;margin-bottom:4px;}
+.prog-bar{height:4px;background:#0d1a28;border-radius:2px;overflow:hidden;}
+.prog-fill{height:100%;border-radius:2px;transition:width 1s ease;}
+.pf-cyan{background:linear-gradient(90deg,#005a8a,#00d4ff);}
+.pf-green{background:#0aff7a;}
+.task-note{font-size:10px;color:#3a5060;font-family:monospace;}
+.task-note strong{color:#8b949e;}
+
+/* ══ BOTTOM TABS ══ */
+.btabs{
+  background:#0a1220;border-top:1px solid #1e3040;
+  display:flex;padding:0 22px;flex-shrink:0;
+}
+.btab{
+  padding:10px 16px;font-size:11px;color:#3a5060;
+  cursor:pointer;border-bottom:2px solid transparent;
+  transition:all .15s;font-family:monospace;letter-spacing:.5px;
+}
+.btab:hover{color:#c9d1d9;}
+.btab.on{color:#00d4ff;border-bottom-color:#00d4ff;}
+
+/* ══ SIDEBAR ══ */
+.sidebar{
+  width:290px;flex-shrink:0;background:#0a1220;
+  border-left:1px solid #1e3040;display:flex;flex-direction:column;
+}
+.sb-head{
+  padding:13px 16px;border-bottom:1px solid #1e3040;
+  display:flex;align-items:center;gap:8px;
+}
+.sb-title{font-size:12px;font-weight:800;color:#c9d1d9;font-family:monospace;letter-spacing:.5px;}
+.online-dot{
+  margin-left:auto;width:7px;height:7px;border-radius:50%;
+  background:#0aff7a;box-shadow:0 0 8px #0aff7a;
+  animation:pls 2s infinite;
+}
+.chat-body{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px;}
+.msg{display:flex;gap:7px;}
+.msg.me{flex-direction:row-reverse;}
+.av{
+  width:24px;height:24px;border-radius:3px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:800;font-family:monospace;
+}
+.bubble{
+  background:#0d1a28;border:1px solid #1e3040;
+  border-radius:2px 6px 6px 6px;padding:8px 10px;
+  font-size:11px;line-height:1.6;color:#8b949e;max-width:200px;
+}
+.msg.me .bubble{background:#100a1e;border-color:#9b59ff33;border-radius:6px 2px 6px 6px;}
+.msg-time{font-size:9px;color:#3a5060;margin-top:2px;font-family:monospace;}
+
+.bubble.warn{border-left:2px solid #ffaa00;background:#1a1000;}
+.warn-head{color:#ffaa00;font-weight:800;font-size:11px;margin-bottom:4px;}
+.chat-btns{display:flex;gap:6px;margin-top:7px;}
+.cbtn{
+  padding:4px 9px;border-radius:3px;
+  font-size:10px;font-weight:800;cursor:pointer;border:none;font-family:monospace;
+}
+.cbtn-s{background:#0d1a28;color:#8b949e;border:1px solid #1e3040;}
+.cbtn-p{background:#002820;color:#0aff7a;border:1px solid #0aff7a55;}
+.cbtn-d{background:#1a0010;color:#ff4466;border:1px solid #ff446655;}
+
+.chat-input-row{padding:10px 12px;border-top:1px solid #1e3040;display:flex;gap:7px;}
+.chat-inp{
+  flex:1;background:#0d1a28;border:1px solid #1e3040;
+  border-radius:4px;padding:7px 10px;
+  font-size:11px;color:#c9d1d9;outline:none;font-family:inherit;
+}
+.chat-inp:focus{border-color:#00d4ff55;}
+.send-btn{
+  padding:7px 12px;background:#001a2e;border:1px solid #00d4ff55;
+  border-radius:4px;color:#00d4ff;font-size:13px;cursor:pointer;
+}
+.send-btn:hover{background:#002a40;}
+
+/* ══ KEYFRAMES ══ */
+@keyframes pls{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes pls-green{0%,100%{box-shadow:0 0 0 0 #0aff7a44}50%{box-shadow:0 0 8px 2px #0aff7a33}}
+@keyframes active-stage-glow{
+  0%,100%{box-shadow:0 0 0 1px #00d4ff33,0 0 20px #00d4ff22}
+  50%{box-shadow:0 0 0 1px #00d4ff88,0 0 30px #00d4ff44}
+}
+@keyframes holo-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes holo-scan{0%{top:-10%;opacity:.8}100%{top:110%;opacity:0}}
+@keyframes arm-type-l{0%,100%{transform:rotate(-10deg) translateY(0)}50%{transform:rotate(5deg) translateY(-3px)}}
+@keyframes arm-type-r{0%,100%{transform:rotate(10deg) translateY(0)}50%{transform:rotate(-5deg) translateY(-3px)}}
+@keyframes visor-pulse{0%,100%{opacity:.7}50%{opacity:1}}
+@keyframes data-stream{0%{stroke-dashoffset:60}100%{stroke-dashoffset:0}}
+@keyframes done-bob{0%,100%{transform:translateY(0) rotate(0deg)}33%{transform:translateY(-5px) rotate(-1deg)}66%{transform:translateY(-3px) rotate(1deg)}}
+@keyframes chest-pulse{0%,100%{opacity:.6}50%{opacity:1}}
+</style>
+</head>
+<body>
+
+<!-- ══ TOP NAV ══ -->
+<nav class="topnav">
+  <div class="logo">AI·<em>DZHT</em></div>
+  <div style="display:flex;gap:2px;">
+    <div class="navlink">大盘</div>
+    <div class="navlink active">项目</div>
+    <div class="navlink">Agent</div>
+    <div class="navlink">统计</div>
+  </div>
+  <div class="nav-right">
+    <div class="user-badge">
+      <div class="pulse-dot"></div>ZHANGSHANSHAN
+    </div>
+  </div>
+</nav>
+
+<div class="main">
+<div class="workspace">
+
+  <!-- ══ REQ HEADER ══ -->
+  <div class="req-header">
+    <div class="breadcrumb">
+      <span>电商平台重构</span> / <span>用户系统</span> / REQ-042
+    </div>
+    <div class="req-title-row">
+      <div class="req-title">用户认证模块</div>
+      <div class="status-pill">RUNNING</div>
+    </div>
+    <div class="req-meta">
+      <span>STORIES <span class="meta-v">3</span></span>
+      <span>ACTIVE <span class="meta-v">2</span></span>
+      <span>DONE <span class="meta-g">1</span></span>
+      <span>TOKEN <span class="meta-v" id="total-tok">42,817</span></span>
+      <span>NEXT APPROVAL <span class="meta-w">部署阶段 ~20min</span></span>
+    </div>
+  </div>
+
+  <div class="content">
+
+  <!-- ══════════ PIPELINE ══════════ -->
+  <div class="pipeline-section">
+    <div class="section-label">流水线 · Pipeline</div>
+    <div class="pipeline-flow">
+
+      <!-- Stage 1: Done -->
+      <div class="stage-node">
+        <div class="stage-box done">
+          <div class="stage-icon">✦</div>
+          <div class="stage-name">需求解析</div>
+          <div class="stage-status">✓ 22min</div>
+        </div>
+      </div>
+
+      <div class="pipe-arrow lit"><div class="flow-dot"></div><div class="arrow-tip"></div></div>
+
+      <!-- Stage 2: Done -->
+      <div class="stage-node">
+        <div class="stage-box done">
+          <div class="stage-icon">◈</div>
+          <div class="stage-name">架构设计</div>
+          <div class="stage-status">✓ 41min</div>
+        </div>
+      </div>
+
+      <div class="pipe-arrow lit"><div class="flow-dot" style="animation-delay:.5s"></div><div class="arrow-tip"></div></div>
+
+      <!-- Stage 3: ACTIVE PARALLEL -->
+      <div class="stage-node" style="min-width:120px;">
+        <div class="stage-box parallel active" style="width:108px;">
+          <div class="stage-icon">⟳</div>
+          <div class="stage-name">并行实现</div>
+          <div class="stage-status">3 Agents · 进行中</div>
+          <div class="parallel-sub">
+            <div class="psub" style="background:#00d4ff;box-shadow:0 0 5px #00d4ff;animation:pls .8s infinite;"></div>
+            <div class="psub" style="background:#ffaa00;box-shadow:0 0 5px #ffaa00;animation:pls .8s .2s infinite;"></div>
+            <div class="psub" style="background:#0aff7a;box-shadow:0 0 5px #0aff7a;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-arrow"><div class="arrow-tip"></div></div>
+
+      <!-- Stage 4: Pending -->
+      <div class="stage-node">
+        <div class="stage-box pending">
+          <div class="stage-icon">○</div>
+          <div class="stage-name">集成测试</div>
+          <div class="stage-status">待执行</div>
+        </div>
+      </div>
+
+      <div class="pipe-arrow"><div class="arrow-tip"></div></div>
+
+      <!-- Stage 5: Pending (Approval) -->
+      <div class="stage-node">
+        <div class="stage-box pending" style="border-color:#ffaa0033;">
+          <div class="stage-icon">⚑</div>
+          <div class="stage-name">部署</div>
+          <div class="stage-status" style="color:#ffaa0066;">需要审批</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════ COMMANDER STRIP ══════════ -->
+  <div class="cmd-strip">
+    <!-- Commander Hologram -->
+    <div class="cmd-avatar-wrap">
+      <svg width="60" height="70" viewBox="0 0 60 70">
+        <!-- Outer glow ring -->
+        <circle cx="30" cy="28" r="24" fill="none" stroke="#9b59ff" stroke-width="1" opacity="0.3"
+                style="animation:pls 2s infinite;"/>
+        <circle cx="30" cy="28" r="20" fill="none" stroke="#9b59ff" stroke-width="1" opacity="0.15"/>
+        <!-- Holo base platform -->
+        <ellipse cx="30" cy="65" rx="18" ry="4" fill="#9b59ff22" stroke="#9b59ff44" stroke-width="1"/>
+        <!-- Body geometric -->
+        <polygon points="22,44 38,44 40,58 20,58" fill="#150a30" stroke="#9b59ff" stroke-width="1"/>
+        <!-- Chest power core -->
+        <rect x="26" y="48" width="8" height="6" rx="2" fill="#9b59ff44" stroke="#c084fc" stroke-width="1"
+              style="animation:chest-pulse 1.5s infinite;"/>
+        <rect x="28" y="50" width="4" height="2" rx="1" fill="#c084fc" style="animation:chest-pulse 1.5s infinite;"/>
+        <!-- Shoulder pads -->
+        <rect x="15" y="44" width="8" height="5" rx="2" fill="#1a0d35" stroke="#9b59ff88" stroke-width="1"/>
+        <rect x="37" y="44" width="8" height="5" rx="2" fill="#1a0d35" stroke="#9b59ff88" stroke-width="1"/>
+        <!-- Helmet -->
+        <rect x="18" y="14" width="24" height="20" rx="5" fill="#1a0d35" stroke="#9b59ff" stroke-width="1.2"/>
+        <!-- Visor -->
+        <rect x="20" y="20" width="20" height="7" rx="2" fill="#9b59ff" opacity="0.8"
+              style="animation:visor-pulse 1.8s infinite;"/>
+        <!-- Visor reflection -->
+        <rect x="21" y="21" width="6" height="2" rx="1" fill="white" opacity="0.3"/>
+        <!-- Helmet top fin -->
+        <polygon points="27,14 33,14 31,8 29,8" fill="#9b59ff" opacity="0.7"/>
+        <!-- Command star -->
+        <text x="26" y="13" font-size="7" fill="#f0e040" opacity="0.9">★</text>
+        <!-- Arms -->
+        <rect x="6" y="44" width="10" height="5" rx="2.5" fill="#1a0d35" stroke="#9b59ff66" stroke-width="1"
+              transform="rotate(-15,11,46)"/>
+        <!-- Walkie talkie -->
+        <rect x="2" y="35" width="6" height="10" rx="1.5" fill="#0d1a28" stroke="#9b59ff55" stroke-width="1"/>
+        <rect x="3" y="36" width="4" height="5" rx="1" fill="#9b59ff33"/>
+        <rect x="4" y="33" width="2" height="3" rx="1" fill="#9b59ff77"/>
+        <!-- Right arm -->
+        <rect x="44" y="44" width="10" height="5" rx="2.5" fill="#1a0d35" stroke="#9b59ff66" stroke-width="1"
+              transform="rotate(15,49,46)"/>
+        <!-- Scan line effect on body -->
+        <rect x="22" y="0" width="16" height="2" rx="1" fill="#9b59ff" opacity="0.4"
+              style="animation:holo-scan 2s linear infinite;"/>
+      </svg>
+    </div>
+    <div class="cmd-text">
+      <h3>全局协调中</h3>
+      <p>Story A·B 并行推进。Story C 已完成，架构 Agent 待机。<br>
+      预计 ~20min 后进入集成测试，届时将请求你的部署授权。</p>
+    </div>
+    <div class="cmd-kpis">
+      <div class="kpi"><div class="kpi-v" style="color:#00d4ff;">2</div><div class="kpi-l">Active</div></div>
+      <div class="kpi"><div class="kpi-v" style="color:#0aff7a;">1</div><div class="kpi-l">Done</div></div>
+      <div class="kpi"><div class="kpi-v" style="color:#ffaa00;">0</div><div class="kpi-l">Approval</div></div>
+    </div>
+  </div>
+
+  <!-- ══════════ STORIES GRID ══════════ -->
+  <div class="section-label" style="font-size:10px;font-weight:800;color:#3a5060;letter-spacing:1.5px;text-transform:uppercase;font-family:monospace;display:flex;align-items:center;gap:8px;">
+    并行 Story · Current Stage
+    <div style="flex:1;height:1px;background:#1e3040;"></div>
+  </div>
+
+  <div class="stories-grid">
+
+    <!-- ─ Story A: Frontend ACTIVE ─ -->
+    <div class="story-card active">
+      <div class="card-top">
+        <div>
+          <div class="card-id">STORY-A · 前端实现</div>
+          <div class="card-name">登录 & 注册页面</div>
+        </div>
+        <div class="badge b-active">ACTIVE</div>
+      </div>
+
+      <div class="agent-stage a-active">
+        <div class="stage-top-bar bar-cyan"></div>
+        <div class="tok" id="tok-a">4,231 tok</div>
+
+        <!-- FRONTEND AGENT - Cyber hologram -->
+        <svg width="100" height="105" viewBox="0 0 100 105">
+          <!-- Outer glow -->
+          <circle cx="50" cy="32" r="26" fill="#00d4ff08" style="animation:active-stage-glow 2s infinite;"/>
+          <!-- Holographic base -->
+          <ellipse cx="50" cy="98" rx="22" ry="5" fill="#00d4ff15" stroke="#00d4ff33" stroke-width="1"/>
+          <!-- Holo projection lines from base -->
+          <line x1="35" y1="95" x2="28" y2="75" stroke="#00d4ff" stroke-width="0.5" opacity="0.2"/>
+          <line x1="65" y1="95" x2="72" y2="75" stroke="#00d4ff" stroke-width="0.5" opacity="0.2"/>
+
+          <!-- Body: sleek geometric tech suit -->
+          <polygon points="32,52 68,52 72,80 28,80" fill="#001a2e" stroke="#00d4ff" stroke-width="1.2"/>
+          <!-- Circuit lines on body -->
+          <line x1="40" y1="55" x2="40" y2="75" stroke="#00d4ff" stroke-width="0.5" opacity="0.4"/>
+          <line x1="60" y1="55" x2="60" y2="75" stroke="#00d4ff" stroke-width="0.5" opacity="0.4"/>
+          <line x1="35" y1="65" x2="65" y2="65" stroke="#00d4ff" stroke-width="0.5" opacity="0.3"/>
+          <!-- Chest core -->
+          <rect x="43" y="60" width="14" height="10" rx="3" fill="#00d4ff22" stroke="#00d4ff" stroke-width="1"
+                style="animation:chest-pulse 1.2s infinite;"/>
+          <polygon points="50,62 56,67 50,72 44,67" fill="#00d4ff" opacity="0.6" style="animation:visor-pulse 1.2s infinite;"/>
+          <!-- Shoulder armor -->
+          <rect x="20" y="51" width="13" height="8" rx="3" fill="#001a2e" stroke="#00d4ff77" stroke-width="1"/>
+          <rect x="67" y="51" width="13" height="8" rx="3" fill="#001a2e" stroke="#00d4ff77" stroke-width="1"/>
+
+          <!-- Helmet: angular tech helm -->
+          <polygon points="28,14 72,14 76,36 24,36" fill="#001a2e" stroke="#00d4ff" stroke-width="1.5"/>
+          <!-- Helm top ridge -->
+          <rect x="44" y="8" width="12" height="7" rx="2" fill="#001a2e" stroke="#00d4ff88" stroke-width="1"/>
+          <!-- VISOR - full width glowing -->
+          <rect x="30" y="20" width="40" height="10" rx="3" fill="#00d4ff" opacity="0.85"
+                style="animation:visor-pulse 1s infinite;"/>
+          <!-- Visor HUD lines -->
+          <line x1="32" y1="23" x2="42" y2="23" stroke="white" stroke-width="0.5" opacity="0.5"/>
+          <line x1="32" y1="27" x2="38" y2="27" stroke="white" stroke-width="0.5" opacity="0.3"/>
+          <circle cx="64" cy="25" r="3" fill="none" stroke="white" stroke-width="0.5" opacity="0.4"/>
+          <!-- Chin piece -->
+          <rect x="36" y="33" width="28" height="5" rx="2" fill="#001528" stroke="#00d4ff55" stroke-width="1"/>
+
+          <!-- Holographic SCREEN the agent is typing on (floating in front) -->
+          <rect x="15" y="82" width="70" height="20" rx="3" fill="#001a2e" stroke="#00d4ff55" stroke-width="1" opacity="0.9"/>
+          <!-- Code lines on screen -->
+          <rect x="18" y="85" width="35" height="2" rx="1" fill="#00d4ff" opacity="0.7"/>
+          <rect x="18" y="89" width="55" height="2" rx="1" fill="#0aff7a" opacity="0.5"/>
+          <rect x="18" y="93" width="45" height="2" rx="1" fill="#9b59ff" opacity="0.4"/>
+          <!-- Blinking cursor -->
+          <rect x="55" y="85" width="2" height="2" rx="0.5" fill="white" style="animation:pls .8s infinite;"/>
+
+          <!-- LEFT ARM - typing animation -->
+          <g style="transform-origin:32px 57px;animation:arm-type-l .4s ease-in-out infinite;">
+            <rect x="8" y="54" width="25" height="7" rx="3.5" fill="#001a2e" stroke="#00d4ff66" stroke-width="1"/>
+            <!-- Hand glow -->
+            <circle cx="9" cy="57" r="4" fill="#00d4ff22" stroke="#00d4ff55" stroke-width="1"/>
+          </g>
+          <!-- RIGHT ARM - typing (offset) -->
+          <g style="transform-origin:68px 57px;animation:arm-type-r .4s ease-in-out infinite;animation-delay:.2s;">
+            <rect x="67" y="54" width="25" height="7" rx="3.5" fill="#001a2e" stroke="#00d4ff66" stroke-width="1"/>
+            <circle cx="91" cy="57" r="4" fill="#00d4ff22" stroke="#00d4ff55" stroke-width="1"/>
+          </g>
+
+          <!-- Data stream particles -->
+          <circle cx="20" cy="60" r="1.5" fill="#00d4ff" opacity="0.8" style="animation:dbounce .8s .1s infinite;"/>
+          <circle cx="80" cy="60" r="1.5" fill="#00d4ff" opacity="0.8" style="animation:dbounce .8s .3s infinite;"/>
+
+          <!-- Scan line sweeping -->
+          <rect x="28" y="14" width="44" height="2" fill="white" opacity="0.05"
+                style="animation:holo-scan 3s linear infinite;"/>
+        </svg>
+
+        <div class="agent-lbl" style="color:#00d4ff;">FRONTEND AGENT</div>
+        <div class="agent-task">正在写 LoginForm.tsx…</div>
+        <div class="dots">
+          <div class="d" style="background:#00d4ff;"></div>
+          <div class="d" style="background:#00d4ff;"></div>
+          <div class="d" style="background:#00d4ff;"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="prog-row"><span>React 组件构建</span><span style="color:#00d4ff;">75%</span></div>
+        <div class="prog-bar"><div class="prog-fill pf-cyan" style="width:75%;"></div></div>
+      </div>
+      <div class="task-note"><strong>当前：</strong>OAuth2 回调处理</div>
+    </div>
+
+    <!-- ─ Story B: Backend ACTIVE ─ -->
+    <div class="story-card active">
+      <div class="card-top">
+        <div>
+          <div class="card-id">STORY-B · 后端实现</div>
+          <div class="card-name">认证 API & JWT 服务</div>
+        </div>
+        <div class="badge b-active">ACTIVE</div>
+      </div>
+
+      <div class="agent-stage a-amber a-active" style="border-color:#ffaa0044;box-shadow:0 0 20px #ffaa0011;">
+        <div class="stage-top-bar bar-amber"></div>
+        <div class="tok" id="tok-b">6,847 tok</div>
+
+        <!-- BACKEND AGENT - amber hologram -->
+        <svg width="100" height="105" viewBox="0 0 100 105">
+          <circle cx="50" cy="32" r="26" fill="#ffaa0008"/>
+          <ellipse cx="50" cy="98" rx="22" ry="5" fill="#ffaa0015" stroke="#ffaa0033" stroke-width="1"/>
+
+          <!-- Body: heavier, server-tech suit -->
+          <polygon points="30,52 70,52 74,80 26,80" fill="#1a0f00" stroke="#ffaa00" stroke-width="1.2"/>
+          <line x1="38" y1="55" x2="38" y2="75" stroke="#ffaa00" stroke-width="0.5" opacity="0.4"/>
+          <line x1="62" y1="55" x2="62" y2="75" stroke="#ffaa00" stroke-width="0.5" opacity="0.4"/>
+          <line x1="34" y1="63" x2="66" y2="63" stroke="#ffaa00" stroke-width="0.5" opacity="0.3"/>
+          <line x1="34" y1="70" x2="66" y2="70" stroke="#ffaa00" stroke-width="0.5" opacity="0.2"/>
+          <!-- Server rack details on chest -->
+          <rect x="40" y="56" width="20" height="4" rx="1" fill="#ffaa0022" stroke="#ffaa0077" stroke-width="0.5"/>
+          <circle cx="57" cy="58" r="1.5" fill="#ffaa00" style="animation:pls .7s infinite;"/>
+          <rect x="40" y="62" width="20" height="4" rx="1" fill="#ffaa0022" stroke="#ffaa0077" stroke-width="0.5"/>
+          <circle cx="57" cy="64" r="1.5" fill="#0aff7a" style="animation:pls 1.1s infinite;"/>
+          <rect x="40" y="68" width="20" height="4" rx="1" fill="#ffaa0022" stroke="#ffaa0077" stroke-width="0.5"/>
+          <circle cx="57" cy="70" r="1.5" fill="#ffaa00" style="animation:pls .9s .3s infinite;"/>
+
+          <rect x="18" y="51" width="13" height="8" rx="3" fill="#1a0f00" stroke="#ffaa0077" stroke-width="1"/>
+          <rect x="69" y="51" width="13" height="8" rx="3" fill="#1a0f00" stroke="#ffaa0077" stroke-width="1"/>
+
+          <!-- Helmet: wider, industrial -->
+          <polygon points="26,13 74,13 78,36 22,36" fill="#1a0f00" stroke="#ffaa00" stroke-width="1.5"/>
+          <rect x="42" y="7" width="16" height="7" rx="2" fill="#1a0f00" stroke="#ffaa0088" stroke-width="1"/>
+          <!-- VISOR amber -->
+          <rect x="28" y="19" width="44" height="11" rx="3" fill="#ffaa00" opacity="0.8"
+                style="animation:visor-pulse 0.9s infinite;"/>
+          <!-- Visor HUD -->
+          <line x1="30" y1="22" x2="46" y2="22" stroke="white" stroke-width="0.5" opacity="0.4"/>
+          <rect x="60" y="21" width="8" height="4" rx="1" fill="white" opacity="0.15"/>
+          <line x1="30" y1="26" x2="40" y2="26" stroke="white" stroke-width="0.5" opacity="0.25"/>
+          <rect x="36" y="33" width="28" height="5" rx="2" fill="#1a0800" stroke="#ffaa0055" stroke-width="1"/>
+
+          <!-- Terminal screen (floating) -->
+          <rect x="12" y="82" width="76" height="20" rx="3" fill="#1a0f00" stroke="#ffaa0055" stroke-width="1" opacity="0.9"/>
+          <!-- Terminal lines -->
+          <rect x="15" y="85" width="12" height="2" rx="1" fill="#0aff7a" opacity="0.7"/>
+          <rect x="29" y="85" width="40" height="2" rx="1" fill="#8b949e" opacity="0.5"/>
+          <rect x="15" y="89" width="8" height="2" rx="1" fill="#ffaa00" opacity="0.6"/>
+          <rect x="25" y="89" width="50" height="2" rx="1" fill="#8b949e" opacity="0.4"/>
+          <rect x="15" y="93" width="8" height="2" rx="1" fill="#0aff7a" opacity="0.5"/>
+          <rect x="25" y="93" width="30" height="2" rx="1" fill="#8b949e" opacity="0.3"/>
+          <rect x="57" y="93" width="2" height="2" rx="0.5" fill="#ffaa00" style="animation:pls .8s infinite;"/>
+
+          <!-- Arms typing -->
+          <g style="transform-origin:30px 57px;animation:arm-type-l .45s ease-in-out infinite;animation-delay:.08s;">
+            <rect x="6" y="54" width="25" height="7" rx="3.5" fill="#1a0f00" stroke="#ffaa0066" stroke-width="1"/>
+            <circle cx="7" cy="57" r="4" fill="#ffaa0022" stroke="#ffaa0055" stroke-width="1"/>
+          </g>
+          <g style="transform-origin:70px 57px;animation:arm-type-r .45s ease-in-out infinite;animation-delay:.25s;">
+            <rect x="69" y="54" width="25" height="7" rx="3.5" fill="#1a0f00" stroke="#ffaa0066" stroke-width="1"/>
+            <circle cx="93" cy="57" r="4" fill="#ffaa0022" stroke="#ffaa0055" stroke-width="1"/>
+          </g>
+
+          <rect x="26" y="13" width="48" height="2" fill="white" opacity="0.04"
+                style="animation:holo-scan 3.5s linear infinite;"/>
+        </svg>
+
+        <div class="agent-lbl" style="color:#ffaa00;">BACKEND AGENT</div>
+        <div class="agent-task">生成 JWT 刷新中间件…</div>
+        <div class="dots">
+          <div class="d" style="background:#ffaa00;"></div>
+          <div class="d" style="background:#ffaa00;"></div>
+          <div class="d" style="background:#ffaa00;"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="prog-row"><span>API 服务构建</span><span style="color:#ffaa00;">60%</span></div>
+        <div class="prog-bar"><div class="prog-fill" style="width:60%;background:linear-gradient(90deg,#5a3d00,#ffaa00);"></div></div>
+      </div>
+      <div class="task-note"><strong>当前：</strong>auth.middleware.go · JWT 刷新逻辑</div>
+    </div>
+
+    <!-- ─ Story C: Done ─ -->
+    <div class="story-card done">
+      <div class="card-top">
+        <div>
+          <div class="card-id">STORY-C · 数据库设计</div>
+          <div class="card-name">用户数据模型</div>
+        </div>
+        <div class="badge b-done">DONE</div>
+      </div>
+
+      <div class="agent-stage a-done" style="border-color:#0aff7a33;">
+        <div class="stage-top-bar bar-green"></div>
+
+        <!-- ARCH AGENT - green, done/floating -->
+        <svg width="100" height="105" viewBox="0 0 100 105"
+             style="animation:done-bob 4s ease-in-out infinite;">
+          <circle cx="50" cy="32" r="26" fill="#0aff7a06"/>
+          <ellipse cx="50" cy="98" rx="22" ry="5" fill="#0aff7a10" stroke="#0aff7a22" stroke-width="1"/>
+
+          <!-- Body: lighter, relaxed stance -->
+          <polygon points="32,54 68,54 70,78 30,78" fill="#002015" stroke="#0aff7a" stroke-width="1" opacity="0.8"/>
+          <line x1="50" y1="55" x2="50" y2="76" stroke="#0aff7a" stroke-width="0.5" opacity="0.3"/>
+          <!-- Blueprint icon on chest -->
+          <rect x="41" y="60" width="18" height="12" rx="2" fill="#0aff7a15" stroke="#0aff7a55" stroke-width="0.8"/>
+          <line x1="43" y1="64" x2="57" y2="64" stroke="#0aff7a" stroke-width="0.5" opacity="0.6"/>
+          <line x1="43" y1="67" x2="54" y2="67" stroke="#0aff7a" stroke-width="0.5" opacity="0.5"/>
+          <line x1="43" y1="70" x2="57" y2="70" stroke="#0aff7a" stroke-width="0.5" opacity="0.4"/>
+
+          <rect x="20" y="53" width="13" height="7" rx="3" fill="#002015" stroke="#0aff7a55" stroke-width="1"/>
+          <rect x="67" y="53" width="13" height="7" rx="3" fill="#002015" stroke="#0aff7a55" stroke-width="1"/>
+
+          <!-- Helmet: sleek, visor open/off -->
+          <polygon points="28,13 72,13 75,35 25,35" fill="#002015" stroke="#0aff7a" stroke-width="1.2" opacity="0.85"/>
+          <rect x="42" y="7" width="16" height="7" rx="2" fill="#002015" stroke="#0aff7a66" stroke-width="1"/>
+          <!-- Visor: dimmed/off (done state) -->
+          <rect x="30" y="19" width="40" height="10" rx="3" fill="#0aff7a" opacity="0.25"/>
+          <!-- Happy eyes visible through dim visor -->
+          <path d="M36 23 Q40 21 44 23" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+          <path d="M56 23 Q60 21 64 23" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+          <rect x="34" y="32" width="32" height="4" rx="2" fill="#002015" stroke="#0aff7a44" stroke-width="1"/>
+
+          <!-- Completed work: floating checkmark hologram -->
+          <rect x="22" y="82" width="56" height="20" rx="3" fill="#002015" stroke="#0aff7a44" stroke-width="1" opacity="0.9"/>
+          <circle cx="50" cy="92" r="8" fill="none" stroke="#0aff7a" stroke-width="1.5" opacity="0.7"/>
+          <path d="M44 92 L48 96 L56 86" stroke="#0aff7a" stroke-width="2" fill="none"
+                stroke-linecap="round" stroke-linejoin="round"/>
+
+          <!-- Arms: relaxed, one raised slightly -->
+          <g style="transform-origin:32px 58px;animation:idle-sway 4s ease-in-out infinite;">
+            <rect x="10" y="55" width="23" height="7" rx="3.5" fill="#002015" stroke="#0aff7a55" stroke-width="1"/>
+            <!-- Thumbs up gesture -->
+            <circle cx="11" cy="57" r="5" fill="#002015" stroke="#0aff7a66" stroke-width="1"/>
+            <rect x="9" y="50" width="5" height="8" rx="2.5" fill="#002015" stroke="#0aff7a55" stroke-width="1"/>
+          </g>
+          <g style="transform-origin:68px 58px;animation:idle-sway 4s ease-in-out infinite;animation-delay:.8s;">
+            <rect x="67" y="55" width="23" height="7" rx="3.5" fill="#002015" stroke="#0aff7a55" stroke-width="1"/>
+          </g>
+
+          <!-- Sparkles -->
+          <text x="72" y="16" font-size="10" fill="#0aff7a" opacity="0.7"
+                style="animation:pls 2s .3s infinite;">✦</text>
+          <text x="14" y="14" font-size="8" fill="#0aff7a" opacity="0.5"
+                style="animation:pls 2s .8s infinite;">✦</text>
+        </svg>
+
+        <div class="agent-lbl" style="color:#0aff7a;">ARCH AGENT</div>
+        <div class="agent-task" style="color:#0aff7a88;">✓ 数据模型完成 · 待机</div>
+      </div>
+
+      <div>
+        <div class="prog-row"><span>数据库设计</span><span style="color:#0aff7a;">100%</span></div>
+        <div class="prog-bar"><div class="prog-fill pf-green" style="width:100%;"></div></div>
+      </div>
+      <div class="task-note" style="color:#0aff7a88;">✓ 完成 14:32 · 28min · 12,440 tok</div>
+    </div>
+
+  </div><!-- /stories-grid -->
+  </div><!-- /content -->
+
+  <!-- ══ BOTTOM TABS ══ -->
+  <div class="btabs">
+    <div class="btab on">阶段产出</div>
+    <div class="btab">审批记录</div>
+    <div class="btab">Token 消耗</div>
+    <div class="btab">执行日志</div>
+  </div>
+
+</div><!-- /workspace -->
+
+<!-- ══ COMMANDER SIDEBAR ══ -->
+<div class="sidebar">
+  <div class="sb-head">
+    <svg width="18" height="18" viewBox="0 0 18 18">
+      <polygon points="9,1 17,17 1,17" fill="none" stroke="#9b59ff" stroke-width="1.5"/>
+      <text x="6.5" y="14" font-size="7" fill="#c084fc" font-weight="800" font-family="monospace">C</text>
+    </svg>
+    <div class="sb-title">COMMANDER</div>
+    <div class="online-dot"></div>
+  </div>
+
+  <div class="chat-body">
+    <div class="msg">
+      <div class="av" style="background:#150a30;color:#c084fc;border:1px solid #9b59ff44;">C</div>
+      <div>
+        <div class="bubble">
+          REQ-042 已启动，3 个 Story 并行执行。<br><br>Story C 数据库设计 14min 前完成 ✓
+        </div>
+        <div class="msg-time">14:18</div>
+      </div>
+    </div>
+
+    <div class="msg me">
+      <div class="av" style="background:#001a2e;color:#00d4ff;border:1px solid #00d4ff33;">Z</div>
+      <div>
+        <div class="bubble">后端进度怎么样？</div>
+        <div class="msg-time">14:31</div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <div class="av" style="background:#150a30;color:#c084fc;border:1px solid #9b59ff44;">C</div>
+      <div>
+        <div class="bubble">
+          Backend Agent 正在生成 JWT 刷新逻辑，进度 60%，预计 ~20min。<br><br>
+          Frontend 更快，75%，OAuth2 回调处理中。
+        </div>
+        <div class="msg-time">14:31</div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <div class="av" style="background:#150a30;color:#c084fc;border:1px solid #9b59ff44;">C</div>
+      <div>
+        <div class="bubble warn">
+          <div class="warn-head">⚑ 即将需要授权</div>
+          测试通过后进入部署阶段，届时需要你手动批准上线。
+          <div class="chat-btns">
+            <button class="cbtn cbtn-s">查看架构文档</button>
+          </div>
+        </div>
+        <div class="msg-time">14:32</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-input-row">
+    <input class="chat-inp" type="text" placeholder="发送指令给指挥官…"/>
+    <button class="send-btn">↑</button>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// Token counters
+function animateTok(id,start,per,ms){
+  let v=start;
+  setInterval(()=>{
+    v+=Math.floor(Math.random()*per+1);
+    const el=document.getElementById(id);
+    if(el) el.textContent=v.toLocaleString()+' tok';
+  },ms);
+}
+animateTok('tok-a',4231,18,900);
+animateTok('tok-b',6847,25,700);
+
+function updateTotal(){
+  const a=parseInt((document.getElementById('tok-a')?.textContent||'0').replace(/\D/g,''));
+  const b=parseInt((document.getElementById('tok-b')?.textContent||'0').replace(/\D/g,''));
+  const el=document.getElementById('total-tok');
+  if(el) el.textContent=(a+b+12440).toLocaleString();
+}
+setInterval(updateTotal,500);
+
+// Tab switching
+document.querySelectorAll('.btab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.btab').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+  });
+});
+</script>
+</body>
+</html>

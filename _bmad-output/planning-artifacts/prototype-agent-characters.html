@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-DZHT · 认识你的 AI 团队</title>
+<style>
+
+/* ══════════════════════════════════════════════════
+   TOKENS
+══════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  --bg-base:   #000000;
+  --bg-panel:  #1C1C1E;
+  --bg-p2:     #2C2C2E;
+  --bg-p3:     #3A3A3C;
+  --border:    rgba(255,255,255,0.09);
+  --border-hi: rgba(255,255,255,0.18);
+  --text-1:    #FFFFFF;
+  --text-2:    #AEAEB2;
+  --text-3:    #48484A;
+  --shadow:    0 8px 32px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4);
+  --glass-bg:  rgba(28,28,30,0.75);
+  --glass-bd:  var(--glass-blur);
+  --glass-blur:blur(24px) saturate(160%);
+}
+[data-theme="light"] {
+  --bg-base:   #F5F5F7;
+  --bg-panel:  #FFFFFF;
+  --bg-p2:     #F5F5F7;
+  --bg-p3:     #E8E8ED;
+  --border:    rgba(0,0,0,0.08);
+  --border-hi: rgba(0,0,0,0.18);
+  --text-1:    #1D1D1F;
+  --text-2:    #6E6E73;
+  --text-3:    #AEAEB2;
+  --shadow:    0 4px 20px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.06);
+  --glass-bg:  rgba(255,255,255,0.75);
+  --glass-blur:blur(24px) saturate(180%);
+}
+
+/* ══════════════════════════════════════════════════
+   BASE
+══════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  background: var(--bg-base);
+  color: var(--text-1);
+  min-height: 100vh;
+  transition: background 0.3s, color 0.2s;
+}
+
+/* ══════════════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════════════ */
+.page-hdr {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 36px; height: 52px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+.brand em { font-style: normal; color: var(--text-2); font-weight: 400; }
+
+.seg { display:flex; background:var(--bg-p2); border:1px solid var(--border-hi); border-radius:10px; padding:3px; gap:2px; }
+.seg-b { padding:4px 13px; border-radius:7px; font-size:12px; font-weight:500; border:none; cursor:pointer; font-family:inherit; color:var(--text-2); background:transparent; }
+.seg-b.on { background:var(--bg-panel); color:var(--text-1); box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+
+/* ══════════════════════════════════════════════════
+   PAGE BODY
+══════════════════════════════════════════════════ */
+.main { max-width: 1160px; margin: 0 auto; padding: 48px 36px 80px; }
+
+.hero { text-align: center; margin-bottom: 52px; }
+.hero-eyebrow { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-3); margin-bottom:10px; }
+.hero-title { font-size: 36px; font-weight: 800; letter-spacing: -1px; margin-bottom: 12px; }
+.hero-desc { font-size:15px; color:var(--text-2); line-height:1.7; max-width:560px; margin:0 auto; }
+.hero-hint { margin-top:16px; font-size:12px; color:var(--text-3); }
+.hero-hint kbd {
+  background:var(--bg-p2); border:1px solid var(--border-hi);
+  border-radius:4px; padding:1px 6px; font-family:"SF Mono",Menlo,monospace;
+  font-size:10px; color:var(--text-2);
+}
+
+/* ══════════════════════════════════════════════════
+   AGENT GRID
+══════════════════════════════════════════════════ */
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) { .agent-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* ── Card ── */
+.agent-card {
+  background: var(--bg-panel);
+  border: 1.5px solid var(--border-hi);
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.22s ease, border-color 0.2s;
+  position: relative;
+  box-shadow: var(--shadow);
+}
+.agent-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.2);
+}
+.agent-card:active { transform: translateY(-2px); }
+
+/* Color-tinted top accent bar */
+.card-top-bar {
+  height: 3px;
+  width: 100%;
+}
+
+/* SVG stage */
+.char-stage {
+  background: var(--bg-p2);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px 16px 0;
+  position: relative;
+  overflow: hidden;
+  min-height: 180px;
+}
+
+/* Subtle grid bg in stage */
+.char-stage::before {
+  content: '';
+  position: absolute; inset: 0;
+  opacity: 0.04;
+  background-image:
+    linear-gradient(var(--agent-color, #fff) 1px, transparent 1px),
+    linear-gradient(90deg, var(--agent-color, #fff) 1px, transparent 1px);
+  background-size: 18px 18px;
+  transition: opacity 0.3s;
+}
+.agent-card:hover .char-stage::before { opacity: 0.07; }
+
+/* Working pulse ring on stage */
+.agent-card[data-state="working"] .char-stage {
+  /* subtle color glow at edges */
+  box-shadow: inset 0 -1px 0 var(--agent-color, #fff);
+}
+
+.char-svg {
+  width: 100px;
+  height: 140px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Character group bob */
+.c-group { animation: c-bob 3.5s ease-in-out infinite; }
+[data-state="working"] .c-group { animation: c-bob-fast 2.5s ease-in-out infinite; }
+[data-state="done"] .c-group { animation: c-float 2s ease-in-out infinite; }
+
+@keyframes c-bob      { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+@keyframes c-bob-fast { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+@keyframes c-float    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+
+/* ARM ANIMATIONS */
+.c-arm-l, .c-arm-r { transform-box: fill-box; }
+.c-arm-l { transform-origin: 95% 5%; }
+.c-arm-r { transform-origin: 5% 5%; }
+
+/* Working: typing motion */
+[data-state="working"] .c-arm-l { animation: arm-l-type 0.48s ease-in-out infinite alternate; }
+[data-state="working"] .c-arm-r { animation: arm-r-type 0.48s ease-in-out infinite alternate; animation-delay: 0.24s; }
+@keyframes arm-l-type { from{transform:rotate(-5deg)} to{transform:rotate(-22deg)} }
+@keyframes arm-r-type { from{transform:rotate( 5deg)} to{transform:rotate( 22deg)} }
+
+/* Done: celebration arms raised */
+[data-state="done"] .c-arm-l { animation: arm-l-cel 0.7s ease-in-out infinite alternate; }
+[data-state="done"] .c-arm-r { animation: arm-r-cel 0.7s ease-in-out infinite alternate; animation-delay:0.35s; }
+@keyframes arm-l-cel { from{transform:rotate(-35deg)} to{transform:rotate(-55deg)} }
+@keyframes arm-r-cel { from{transform:rotate( 35deg)} to{transform:rotate( 55deg)} }
+
+/* Eye glow on working */
+.c-eye-iris { transition: opacity 0.3s; }
+[data-state="working"] .c-eye-iris { opacity: 1; filter: brightness(1.3); }
+
+/* Star particles on done */
+.star-p { display: none; }
+[data-state="done"] .star-p {
+  display: block;
+  animation: star-fly 1.2s ease-out infinite;
+}
+@keyframes star-fly {
+  0%   { opacity: 0; transform: translate(0,0) scale(0.5); }
+  30%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx,10px), var(--dy,-20px)) scale(1); }
+}
+
+/* ── Card Info Panel ── */
+.card-info { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+.agent-name-row { display: flex; align-items: center; justify-content: space-between; }
+.agent-name { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+
+.status-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  padding: 2px 8px; border-radius: 12px;
+  font-family: "SF Mono", Menlo, monospace;
+}
+.status-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+}
+
+/* State colors */
+[data-state="idle"]    .status-pill { background: var(--bg-p3); color: var(--text-3); }
+[data-state="working"] .status-pill { background: rgba(255,159,10,0.13); color: #FF9F0A; }
+[data-state="done"]    .status-pill { background: rgba(48,209,88,0.12); color: #30D158; }
+
+[data-state="idle"]    .status-dot { animation: none; }
+[data-state="working"] .status-dot { animation: dot-pulse 1.3s ease infinite; }
+[data-state="done"]    .status-dot { animation: none; }
+@keyframes dot-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.55)} }
+
+.agent-role { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+
+.agent-task { font-size: 11px; color: var(--text-3); font-style: italic; min-height: 15px; }
+[data-state="idle"]    .agent-task { color: var(--text-3); }
+[data-state="working"] .agent-task { color: #FF9F0A; opacity: 0.9; }
+[data-state="done"]    .agent-task { color: #30D158; }
+
+.skill-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.skill-tag {
+  font-size: 10px; font-weight: 700; font-family: "SF Mono", Menlo, monospace;
+  padding: 2px 7px; border-radius: 5px; letter-spacing: 0.2px;
+  background: var(--bg-p3); color: var(--text-2);
+  border: 1px solid var(--border-hi);
+}
+
+/* Card glow on active border */
+.agent-card[data-state="working"] { border-color: var(--agent-color); }
+.agent-card[data-state="done"]    { border-color: #30D158; }
+
+/* ══════════════════════════════════════════════════
+   DETAIL PANEL (bottom sheet)
+══════════════════════════════════════════════════ */
+.detail-panel {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-top: 1px solid var(--border-hi);
+  padding: 20px 36px 28px;
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
+  z-index: 50;
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.25);
+}
+.detail-panel.open { transform: translateY(0); }
+.detail-inner { max-width: 1160px; margin: 0 auto; display: flex; gap: 28px; align-items: center; }
+.detail-char { width: 80px; height: 112px; flex-shrink: 0; }
+.detail-text { flex: 1; }
+.detail-name { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+.detail-desc { font-size: 13px; color: var(--text-2); line-height: 1.65; max-width: 500px; }
+.detail-skills { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.detail-skill {
+  padding: 4px 10px; border-radius: 7px; font-size: 12px; font-weight: 700;
+  background: var(--bg-p3); color: var(--text-2); border: 1px solid var(--border-hi);
+}
+.detail-close {
+  margin-left: auto; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--bg-p3); border: 1px solid var(--border-hi);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; color: var(--text-2); flex-shrink: 0;
+  transition: background 0.15s;
+}
+.detail-close:hover { background: var(--bg-p2); color: var(--text-1); }
+
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header class="page-hdr">
+  <div class="brand">AI-DZHT <em>· Agent Characters</em></div>
+  <div class="seg" id="theme-seg">
+    <button class="seg-b" id="btn-light" onclick="setTheme('light')">☀ 亮色</button>
+    <button class="seg-b on" id="btn-dark"  onclick="setTheme('dark')">☽ 暗色</button>
+  </div>
+</header>
+
+<main class="main">
+  <!-- ── HERO ── -->
+  <div class="hero">
+    <div class="hero-eyebrow">AI-DZHT · 研发团队</div>
+    <h1 class="hero-title">认识你的 AI 同事</h1>
+    <p class="hero-desc">8 个专职 Agent，各司其职，协同完成从需求到上线的完整研发流程。他们是你的团队，永不下班。</p>
+    <p class="hero-hint">点击任意 Agent 查看详情 · 再次点击切换工作状态 · <kbd>Space</kbd> 全部进入工作模式</p>
+  </div>
+
+  <!-- ── AGENT GRID ── -->
+  <div class="agent-grid">
+
+    <!-- ①  指挥官 ── purple -->
+    <div class="agent-card" data-agent="commander" data-state="working"
+         style="--agent-color:#BF5AF2;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#5E5CE6,#BF5AF2);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <!-- shadow -->
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.18"/>
+            <!-- legs -->
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#2D2BAF"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#2D2BAF"/>
+            <!-- boots -->
+            <rect x="30" y="113" width="19" height="10" rx="5" fill="#1A1940"/>
+            <rect x="51" y="113" width="19" height="10" rx="5" fill="#1A1940"/>
+            <!-- body -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#4A47C4"/>
+            <!-- collar V -->
+            <path d="M44 56 L50 65 L56 56" fill="#3A38A8"/>
+            <!-- chest ribbons -->
+            <rect x="37" y="64" width="12" height="2.5" rx="1.2" fill="rgba(255,215,0,0.75)"/>
+            <rect x="37" y="68.5" width="9" height="2" rx="1" fill="rgba(255,215,0,0.5)"/>
+            <!-- epaulettes -->
+            <rect x="27" y="56" width="7" height="15" rx="3.5" fill="#6D6AD4"/>
+            <rect x="66" y="56" width="7" height="15" rx="3.5" fill="#6D6AD4"/>
+            <circle cx="30.5" cy="60" r="2.5" fill="#FFD700"/>
+            <circle cx="69.5" cy="60" r="2.5" fill="#FFD700"/>
+            <!-- left arm + hologram -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q16 72 14 85" stroke="#4A47C4" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="14" cy="86" r="7" fill="#F5C5A3"/>
+              <!-- hologram pad in hand -->
+              <rect x="4" y="80" width="16" height="11" rx="3" fill="#140830" stroke="#BF5AF2" stroke-width="0.9"/>
+              <line x1="6" y1="84"  x2="18" y2="84"  stroke="#BF5AF2" stroke-width="0.7" opacity="0.8"/>
+              <line x1="6" y1="87"  x2="16" y2="87"  stroke="#9B59FF" stroke-width="0.7" opacity="0.6"/>
+            </g>
+            <!-- right arm (pointing) -->
+            <g class="c-arm-r">
+              <path d="M71 63 Q84 70 88 78" stroke="#4A47C4" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="88" cy="79" r="7" fill="#F5C5A3"/>
+              <!-- pointing finger -->
+              <path d="M88 72 L88 66" stroke="#F5C5A3" stroke-width="4" stroke-linecap="round"/>
+            </g>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- left ear + headset -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <circle cx="27" cy="35" r="6" fill="#3A38A8" opacity="0.95"/>
+            <circle cx="27" cy="35" r="4" fill="#BF5AF2"/>
+            <!-- headset band -->
+            <path d="M27 29 Q50 16 73 29" stroke="#3A38A8" stroke-width="4" fill="none" stroke-linecap="round"/>
+            <!-- right ear + headset -->
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <circle cx="73" cy="35" r="6" fill="#3A38A8" opacity="0.95"/>
+            <circle cx="73" cy="35" r="4" fill="#BF5AF2"/>
+            <!-- mic arm -->
+            <path d="M27 40 Q22 46 24 52" stroke="#3A38A8" stroke-width="2" stroke-linecap="round" fill="none"/>
+            <circle cx="24" cy="53" r="2.5" fill="#BF5AF2"/>
+            <!-- military hair (dark, short) -->
+            <path d="M29 25 Q50 12 71 25 Q74 20 72 15 Q60 6 50 5 Q40 6 28 15 Q26 20 29 25Z" fill="#18164A"/>
+            <!-- eyes -->
+            <ellipse cx="41" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse cx="59" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="33" rx="4" ry="4.5" fill="#BF5AF2" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="33" rx="4" ry="4.5" fill="#BF5AF2" opacity="0.9"/>
+            <ellipse cx="43" cy="33.5" rx="2" ry="2.5" fill="#7C3AED"/>
+            <ellipse cx="61" cy="33.5" rx="2" ry="2.5" fill="#7C3AED"/>
+            <circle cx="44.5" cy="30.5" r="1.5" fill="white" opacity="0.8"/>
+            <circle cx="62.5" cy="30.5" r="1.5" fill="white" opacity="0.8"/>
+            <!-- eyebrows (confident arch) -->
+            <path d="M37 24 Q42 21 47 23" stroke="#18164A" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M53 23 Q58 21 63 24" stroke="#18164A" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (smirk) -->
+            <path d="M43 45 Q50 49 57 45" stroke="#C4836A" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- cap -->
+            <path d="M28 24 Q50 13 72 24 L74 29 Q50 21 26 29Z" fill="#3A38A8"/>
+            <ellipse cx="50" cy="14" rx="23" ry="7" fill="#4A47C4"/>
+            <path d="M23 29 Q50 37 77 29 L77 33 Q50 41 23 33Z" fill="#2D2BAF"/>
+            <rect x="25" y="25" width="50" height="5" rx="2" fill="#3A38A8"/>
+            <rect x="46" y="12" width="8" height="6" rx="1.5" fill="#FFD700"/>
+            <!-- star particles when done -->
+            <text class="star-p" x="15" y="25" font-size="10" style="--dx:-15px;--dy:-22px;animation-delay:0s">⭐</text>
+            <text class="star-p" x="78" y="30" font-size="8"  style="--dx:12px;--dy:-18px;animation-delay:0.4s">✨</text>
+            <text class="star-p" x="50" y="10" font-size="8"  style="--dx:0px;--dy:-16px;animation-delay:0.2s">⭐</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#BF5AF2;">指挥官</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">工作中</span></span>
+        </div>
+        <div class="agent-role">全局调度 · 工作规划 · 人工节点</div>
+        <div class="agent-task">正在分配 Sprint 3 优先级…</div>
+        <div class="skill-tags">
+          <span class="skill-tag">SP</span><span class="skill-tag">CE</span>
+          <span class="skill-tag">CS</span><span class="skill-tag">SS</span>
+          <span class="skill-tag">ER</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ②  产品 Agent ── blue -->
+    <div class="agent-card" data-agent="product" data-state="idle"
+         style="--agent-color:#0A84FF;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#0057B8,#0A84FF);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.14"/>
+            <!-- legs -->
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#1A3F7A"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#1A3F7A"/>
+            <!-- shoes -->
+            <rect x="30" y="112" width="19" height="11" rx="5" fill="#0D2345"/>
+            <rect x="51" y="112" width="19" height="11" rx="5" fill="#0D2345"/>
+            <!-- body — business casual blue shirt -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#0A84FF"/>
+            <!-- shirt collar -->
+            <path d="M43 56 L50 64 L57 56" fill="#0057B8"/>
+            <!-- shirt button line -->
+            <line x1="50" y1="64" x2="50" y2="90" stroke="#0057B8" stroke-width="1.5" opacity="0.6"/>
+            <circle cx="50" cy="70" r="1.5" fill="#fff" opacity="0.4"/>
+            <circle cx="50" cy="76" r="1.5" fill="#fff" opacity="0.4"/>
+            <!-- left arm (holding tablet) -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q17 74 15 87" stroke="#0A84FF" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="15" cy="88" r="7" fill="#F5C5A3"/>
+              <!-- tablet -->
+              <rect x="3" y="78" width="18" height="24" rx="3" fill="#0D2345" stroke="#4AA8FF" stroke-width="0.9"/>
+              <!-- wireframe lines on tablet -->
+              <rect x="5" y="81" width="14" height="8" rx="1" fill="none" stroke="#4AA8FF" stroke-width="0.6" opacity="0.7"/>
+              <line x1="5" y1="92"  x2="19" y2="92"  stroke="#4AA8FF" stroke-width="0.6" opacity="0.5"/>
+              <line x1="5" y1="95"  x2="15" y2="95"  stroke="#4AA8FF" stroke-width="0.6" opacity="0.4"/>
+              <line x1="5" y1="98"  x2="17" y2="98"  stroke="#4AA8FF" stroke-width="0.6" opacity="0.35"/>
+            </g>
+            <!-- right arm (gesturing) -->
+            <g class="c-arm-r">
+              <path d="M71 63 Q83 72 86 82" stroke="#0A84FF" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="86" cy="83" r="7" fill="#F5C5A3"/>
+            </g>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- ears -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <!-- neat professional hair -->
+            <path d="M28 23 Q50 10 72 23 Q74 18 70 13 Q60 5 50 4 Q40 5 30 13 Q26 18 28 23Z" fill="#3D2B1F"/>
+            <!-- side sweep -->
+            <path d="M28 23 Q28 28 29 32" stroke="#3D2B1F" stroke-width="5" stroke-linecap="round"/>
+            <!-- eyes -->
+            <ellipse cx="41" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse cx="59" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="33" rx="4" ry="4.5" fill="#0A84FF" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="33" rx="4" ry="4.5" fill="#0A84FF" opacity="0.9"/>
+            <ellipse cx="43" cy="33.5" rx="2" ry="2.5" fill="#003A8A"/>
+            <ellipse cx="61" cy="33.5" rx="2" ry="2.5" fill="#003A8A"/>
+            <circle cx="44.5" cy="30.5" r="1.5" fill="white" opacity="0.85"/>
+            <circle cx="62.5" cy="30.5" r="1.5" fill="white" opacity="0.85"/>
+            <!-- glasses frame -->
+            <rect x="36" y="28" width="13" height="10" rx="5" fill="none" stroke="#3D2B1F" stroke-width="1.5"/>
+            <rect x="51" y="28" width="13" height="10" rx="5" fill="none" stroke="#3D2B1F" stroke-width="1.5"/>
+            <line x1="49" y1="33" x2="51" y2="33" stroke="#3D2B1F" stroke-width="1.5"/>
+            <!-- eyebrows -->
+            <path d="M37 25 Q42 22 47 24" stroke="#3D2B1F" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M53 24 Q58 22 63 25" stroke="#3D2B1F" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (thoughtful) -->
+            <path d="M44 45 Q50 48 56 45" stroke="#C4836A" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+            <!-- thinking bubble (small) -->
+            <circle cx="82" cy="18" r="7" fill="#0057B8" opacity="0.7" stroke="#4AA8FF" stroke-width="0.8"/>
+            <text x="82" y="22" font-size="8" text-anchor="middle" fill="#fff" opacity="0.9">?</text>
+            <circle cx="76" cy="26" r="3" fill="#0057B8" opacity="0.5"/>
+            <circle cx="72" cy="30" r="2" fill="#0057B8" opacity="0.35"/>
+            <text class="star-p" x="12" y="22" font-size="10" style="--dx:-14px;--dy:-20px;animation-delay:0.1s">⭐</text>
+            <text class="star-p" x="80" y="25" font-size="8"  style="--dx:13px;--dy:-16px;animation-delay:0.5s">✨</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#0A84FF;">产品 Agent</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">空闲</span></span>
+        </div>
+        <div class="agent-role">需求分析 · PRD 生命周期</div>
+        <div class="agent-task">等待下一个需求…</div>
+        <div class="skill-tags">
+          <span class="skill-tag">BP</span><span class="skill-tag">DR</span>
+          <span class="skill-tag">CP</span><span class="skill-tag">EP</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③  架构 Agent ── green -->
+    <div class="agent-card" data-agent="arch" data-state="done"
+         style="--agent-color:#30D158;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#1B7A40,#30D158);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.14"/>
+            <!-- legs -->
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#1B4A2A"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#1B4A2A"/>
+            <rect x="30" y="112" width="19" height="11" rx="5" fill="#0D2B19"/>
+            <rect x="51" y="112" width="19" height="11" rx="5" fill="#0D2B19"/>
+            <!-- body — technical jacket -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#1B7A40"/>
+            <path d="M44 56 L50 63 L56 56" fill="#145E30"/>
+            <!-- pocket detail -->
+            <rect x="32" y="68" width="12" height="9" rx="2" fill="#145E30" stroke="#30D158" stroke-width="0.6" opacity="0.7"/>
+            <line x1="32" y1="71" x2="44" y2="71" stroke="#30D158" stroke-width="0.6" opacity="0.5"/>
+            <!-- left arm (holding blueprint) -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q17 73 15 86" stroke="#1B7A40" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="15" cy="87" r="7" fill="#F5C5A3"/>
+              <!-- blueprint scroll -->
+              <rect x="3"  y="75" width="20" height="26" rx="3" fill="#F5E6C8" stroke="#8B6914" stroke-width="1"/>
+              <line x1="5"  y1="80" x2="21" y2="80" stroke="#30D158" stroke-width="0.7" opacity="0.8"/>
+              <line x1="5"  y1="84" x2="21" y2="84" stroke="#2196F3" stroke-width="0.7" opacity="0.6"/>
+              <line x1="5"  y1="88" x2="18" y2="88" stroke="#30D158" stroke-width="0.7" opacity="0.5"/>
+              <rect x="8"  y="82" width="6"  height="5"  fill="none" stroke="#FF9F0A" stroke-width="0.6" opacity="0.7"/>
+              <rect x="17" y="82" width="4"  height="4"  fill="none" stroke="#FF9F0A" stroke-width="0.6" opacity="0.5"/>
+              <line x1="5"  y1="92" x2="21" y2="92" stroke="#8B6914" stroke-width="0.5" opacity="0.4"/>
+              <line x1="5"  y1="96" x2="16" y2="96" stroke="#8B6914" stroke-width="0.5" opacity="0.4"/>
+              <!-- blueprint roll ends -->
+              <ellipse cx="13" cy="75" rx="10" ry="3" fill="#E8D5B5" stroke="#8B6914" stroke-width="0.8"/>
+              <ellipse cx="13" cy="101" rx="10" ry="3" fill="#E8D5B5" stroke="#8B6914" stroke-width="0.8"/>
+            </g>
+            <!-- right arm (raised, pointing at design) -->
+            <g class="c-arm-r">
+              <path d="M71 60 Q84 56 90 62" stroke="#1B7A40" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="90" cy="63" r="7" fill="#F5C5A3"/>
+              <!-- pointing up -->
+              <path d="M90 56 L90 50" stroke="#F5C5A3" stroke-width="4" stroke-linecap="round"/>
+            </g>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- ears -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <!-- hair (gray-brown, senior engineer) -->
+            <path d="M28 24 Q50 11 72 24 Q73 18 70 13 Q60 5 50 4 Q40 5 30 13 Q27 18 28 24Z" fill="#6B6B6B"/>
+            <!-- white/gray at temples -->
+            <path d="M28 24 Q28 30 30 36" stroke="#AAAAAA" stroke-width="4" stroke-linecap="round"/>
+            <path d="M72 24 Q72 30 70 36" stroke="#AAAAAA" stroke-width="4" stroke-linecap="round"/>
+            <!-- eyes -->
+            <ellipse cx="41" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse cx="59" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="33" rx="4" ry="4.5" fill="#30D158" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="33" rx="4" ry="4.5" fill="#30D158" opacity="0.9"/>
+            <ellipse cx="43" cy="33.5" rx="2" ry="2.5" fill="#0D4A1F"/>
+            <ellipse cx="61" cy="33.5" rx="2" ry="2.5" fill="#0D4A1F"/>
+            <circle cx="44.5" cy="30.5" r="1.5" fill="white" opacity="0.85"/>
+            <circle cx="62.5" cy="30.5" r="1.5" fill="white" opacity="0.85"/>
+            <!-- round glasses -->
+            <circle cx="42" cy="33" r="7" fill="none" stroke="#6B6B6B" stroke-width="1.5"/>
+            <circle cx="60" cy="33" r="7" fill="none" stroke="#6B6B6B" stroke-width="1.5"/>
+            <line x1="49" y1="33" x2="53" y2="33" stroke="#6B6B6B" stroke-width="1.5"/>
+            <line x1="35" y1="32" x2="33" y2="30" stroke="#6B6B6B" stroke-width="1.5"/>
+            <line x1="67" y1="32" x2="69" y2="30" stroke="#6B6B6B" stroke-width="1.5"/>
+            <!-- eyebrows -->
+            <path d="M37 24 Q42 21 47 23" stroke="#6B6B6B" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M53 23 Q58 21 63 24" stroke="#6B6B6B" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (satisfied) -->
+            <path d="M44 45 Q50 49 56 45" stroke="#C4836A" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- hard hat -->
+            <ellipse cx="50" cy="14" rx="24" ry="10" fill="#FFFFFF" stroke="#30D158" stroke-width="1.5"/>
+            <rect x="26" y="20" width="48" height="6" rx="0" fill="#E8E8E8"/>
+            <!-- green stripe on hat -->
+            <rect x="26" y="22" width="48" height="2" rx="0" fill="#30D158" opacity="0.7"/>
+            <!-- hat brim -->
+            <ellipse cx="50" cy="26" rx="28" ry="5" fill="#D0D0D0" stroke="#C0C0C0" stroke-width="0.8"/>
+            <!-- safety logo on hat -->
+            <text x="50" y="19" font-size="9" text-anchor="middle" fill="#30D158">⚙</text>
+            <text class="star-p" x="10" y="22" font-size="10" style="--dx:-14px;--dy:-22px;animation-delay:0s">⭐</text>
+            <text class="star-p" x="82" y="28" font-size="8"  style="--dx:14px;--dy:-18px;animation-delay:0.4s">✨</text>
+            <text class="star-p" x="50" y="5"  font-size="9"  style="--dx:5px;--dy:-15px;animation-delay:0.2s">🎉</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#30D158;">架构 Agent</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">已完成</span></span>
+        </div>
+        <div class="agent-role">技术架构 · ADR · 设计决策</div>
+        <div class="agent-task">架构方案 v2.3 已交付 ✓</div>
+        <div class="skill-tags">
+          <span class="skill-tag">CA</span><span class="skill-tag">ADR</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④  研发 Agent ── cyan -->
+    <div class="agent-card" data-agent="dev" data-state="working"
+         style="--agent-color:#64D2FF;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#007899,#64D2FF);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.14"/>
+            <!-- legs -->
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#1A3A4A"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#1A3A4A"/>
+            <rect x="30" y="112" width="19" height="11" rx="5" fill="#0D2030"/>
+            <rect x="51" y="112" width="19" height="11" rx="5" fill="#0D2030"/>
+            <!-- body — cyan hoodie -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#007899"/>
+            <!-- hoodie pouch pocket -->
+            <rect x="36" y="74" width="28" height="14" rx="5" fill="#005A73"/>
+            <line x1="50" y1="74" x2="50" y2="88" stroke="#007899" stroke-width="1.5"/>
+            <!-- hoodie drawstrings -->
+            <line x1="44" y1="56" x2="43" y2="68" stroke="#005A73" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="56" y1="56" x2="57" y2="68" stroke="#005A73" stroke-width="1.5" stroke-linecap="round"/>
+            <!-- left arm (typing) -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q18 76 18 89" stroke="#007899" stroke-width="11" stroke-linecap="round"/>
+              <circle cx="18" cy="90" r="7" fill="#F5C5A3"/>
+            </g>
+            <!-- right arm (typing) -->
+            <g class="c-arm-r">
+              <path d="M71 63 Q82 76 82 89" stroke="#007899" stroke-width="11" stroke-linecap="round"/>
+              <circle cx="82" cy="90" r="7" fill="#F5C5A3"/>
+            </g>
+            <!-- keyboard/laptop in front -->
+            <rect x="10" y="90" width="80" height="30" rx="5" fill="#0A1520" stroke="#64D2FF" stroke-width="0.8"/>
+            <!-- screen glow -->
+            <rect x="12" y="92" width="76" height="18" rx="3" fill="#0D2035"/>
+            <!-- code lines -->
+            <text x="15" y="102" font-size="5" fill="#64D2FF" opacity="0.8" font-family="monospace">const auth =</text>
+            <text x="15" y="107" font-size="5" fill="#30D158" opacity="0.7" font-family="monospace">  await login()</text>
+            <!-- keyboard keys suggestion -->
+            <rect x="14" y="112" width="72" height="5" rx="2" fill="#1A3A4A"/>
+            <!-- floating code snippet above head -->
+            <rect x="62" y="5" width="32" height="20" rx="4" fill="#0D1A25" stroke="#64D2FF" stroke-width="0.7" opacity="0.8"/>
+            <text x="65" y="13" font-size="4.5" fill="#64D2FF" font-family="monospace" opacity="0.9">if (ok) {</text>
+            <text x="65" y="19" font-size="4.5" fill="#30D158" font-family="monospace" opacity="0.8">  return;</text>
+            <text x="65" y="24" font-size="4.5" fill="#64D2FF" font-family="monospace" opacity="0.7">}</text>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- ears -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <!-- headphones -->
+            <path d="M28 28 Q50 12 72 28" stroke="#1A3A4A" stroke-width="5" fill="none" stroke-linecap="round"/>
+            <rect x="22" y="27" width="12" height="16" rx="5" fill="#1A3A4A"/>
+            <rect x="66" y="27" width="12" height="16" rx="5" fill="#1A3A4A"/>
+            <rect x="24" y="29" width="8" height="12" rx="4" fill="#64D2FF" opacity="0.8"/>
+            <rect x="68" y="29" width="8" height="12" rx="4" fill="#64D2FF" opacity="0.8"/>
+            <!-- messy dark hair with cyan tip highlights -->
+            <path d="M29 23 Q35 8 50 6 Q65 8 71 23 Q68 16 60 12 Q55 9 50 8 Q40 8 30 14 Q28 18 29 23Z" fill="#1A1A2E"/>
+            <!-- cyan hair highlights (dyed tips) -->
+            <path d="M66 12 Q72 18 71 24" stroke="#64D2FF" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+            <path d="M62 9 Q68 14 67 18" stroke="#64D2FF" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <!-- eyes (focused, slightly squinted) -->
+            <ellipse cx="41" cy="34" rx="5.5" ry="5" fill="white"/>
+            <ellipse cx="59" cy="34" rx="5.5" ry="5" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="34" rx="4" ry="3.8" fill="#64D2FF" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="34" rx="4" ry="3.8" fill="#64D2FF" opacity="0.9"/>
+            <ellipse cx="43" cy="34" rx="2" ry="2" fill="#004A60"/>
+            <ellipse cx="61" cy="34" rx="2" ry="2" fill="#004A60"/>
+            <circle cx="44.5" cy="31.5" r="1.4" fill="white" opacity="0.85"/>
+            <circle cx="62.5" cy="31.5" r="1.4" fill="white" opacity="0.85"/>
+            <!-- focused eyebrows (slight furrow) -->
+            <path d="M37 26 Q42 23 47 25" stroke="#1A1A2E" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M53 25 Q58 23 63 26" stroke="#1A1A2E" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (concentrated, slight frown) -->
+            <path d="M44 46 Q50 44 56 46" stroke="#C4836A" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+            <!-- coffee cup -->
+            <rect x="2" y="72" width="14" height="16" rx="3" fill="#8B4513"/>
+            <rect x="4"  y="74" width="10" height="12" rx="2" fill="#6B3410"/>
+            <path d="M16 76 Q20 78 16 82" stroke="#8B4513" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- steam -->
+            <path d="M7 71 Q8 66 7 62" stroke="#aaa" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.5"/>
+            <path d="M11 71 Q12 65 11 61" stroke="#aaa" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.4"/>
+            <text class="star-p" x="10" y="20" font-size="10" style="--dx:-14px;--dy:-22px;animation-delay:0.1s">⭐</text>
+            <text class="star-p" x="82" y="25" font-size="8"  style="--dx:13px;--dy:-18px;animation-delay:0.5s">✨</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#64D2FF;">研发 Agent</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">工作中</span></span>
+        </div>
+        <div class="agent-role">Story 实现 · 单测 · 可并行多实例</div>
+        <div class="agent-task">Story B-042 实现中 (67%)…</div>
+        <div class="skill-tags">
+          <span class="skill-tag">DS</span><span class="skill-tag">×3实例</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤  UX Agent ── pink -->
+    <div class="agent-card" data-agent="ux" data-state="idle"
+         style="--agent-color:#FF375F;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#B8004A,#FF375F);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.14"/>
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#7A1A2A"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#7A1A2A"/>
+            <rect x="30" y="112" width="19" height="11" rx="5" fill="#500D1A"/>
+            <rect x="51" y="112" width="19" height="11" rx="5" fill="#500D1A"/>
+            <!-- body — creative outfit pink -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#C82048"/>
+            <!-- white stripe detail -->
+            <rect x="29" y="66" width="42" height="3" rx="0" fill="rgba(255,255,255,0.15)"/>
+            <path d="M44 56 L50 63 L56 56" fill="#A01838"/>
+            <!-- left arm (holding stylus) -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q16 72 14 84" stroke="#C82048" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="14" cy="85" r="7" fill="#F5C5A3"/>
+              <!-- stylus pen -->
+              <rect x="8" y="68" width="5" height="22" rx="2.5" fill="#FF375F"/>
+              <ellipse cx="10.5" cy="68" rx="2.5" ry="1.5" fill="#FF6B8A"/>
+              <path d="M8 90 L10.5 96 L13 90Z" fill="#CCC"/>
+            </g>
+            <!-- right arm (gesturing creatively) -->
+            <g class="c-arm-r">
+              <path d="M71 62 Q84 66 88 74" stroke="#C82048" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="88" cy="75" r="7" fill="#F5C5A3"/>
+            </g>
+            <!-- mini color palette in top right -->
+            <circle cx="78" cy="16" r="10" fill="#1A0812" stroke="#FF375F" stroke-width="0.8" opacity="0.9"/>
+            <circle cx="75" cy="14" r="3" fill="#FF375F"/>
+            <circle cx="81" cy="14" r="3" fill="#0A84FF"/>
+            <circle cx="75" cy="20" r="3" fill="#30D158"/>
+            <circle cx="81" cy="20" r="3" fill="#FFD60A"/>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- ears -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <!-- ear rings -->
+            <circle cx="28" cy="38" r="3" fill="none" stroke="#FF375F" stroke-width="1.5"/>
+            <!-- creative hair — side bun + swept -->
+            <path d="M28 22 Q50 9 72 22 Q72 16 68 11 Q60 4 50 3 Q40 4 32 11 Q28 16 28 22Z" fill="#3D1A35"/>
+            <!-- Pink highlights in hair -->
+            <path d="M65 10 Q74 18 72 25" stroke="#FF375F" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+            <path d="M61 7 Q70 14 68 20" stroke="#FF375F" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <!-- hair bun on right side -->
+            <circle cx="72" cy="22" r="8" fill="#3D1A35"/>
+            <circle cx="72" cy="22" r="6" fill="#4A2040"/>
+            <!-- bun pin decoration -->
+            <line x1="68" y1="18" x2="76" y2="26" stroke="#FF375F" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+            <circle cx="68" cy="18" r="2" fill="#FF375F"/>
+            <!-- eyes (warm, creative smile lines) -->
+            <ellipse cx="41" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse cx="59" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="33" rx="4" ry="4.5" fill="#FF375F" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="33" rx="4" ry="4.5" fill="#FF375F" opacity="0.9"/>
+            <ellipse cx="43" cy="33.5" rx="2" ry="2.5" fill="#8B0020"/>
+            <ellipse cx="61" cy="33.5" rx="2" ry="2.5" fill="#8B0020"/>
+            <circle cx="44.5" cy="30.5" r="1.5" fill="white" opacity="0.9"/>
+            <circle cx="62.5" cy="30.5" r="1.5" fill="white" opacity="0.9"/>
+            <!-- soft eyebrows -->
+            <path d="M37 25 Q42 22 47 24" stroke="#3D1A35" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M53 24 Q58 22 63 25" stroke="#3D1A35" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (warm smile) -->
+            <path d="M43 45 Q50 50 57 45" stroke="#C4836A" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- rosy cheeks -->
+            <ellipse cx="36" cy="40" rx="5" ry="3" fill="#FF375F" opacity="0.18"/>
+            <ellipse cx="64" cy="40" rx="5" ry="3" fill="#FF375F" opacity="0.18"/>
+            <text class="star-p" x="10" y="22" font-size="10" style="--dx:-14px;--dy:-20px;animation-delay:0s">💖</text>
+            <text class="star-p" x="80" y="30" font-size="8"  style="--dx:12px;--dy:-18px;animation-delay:0.35s">✨</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#FF375F;">UX Agent</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">空闲</span></span>
+        </div>
+        <div class="agent-role">交互设计 · UX 规格说明</div>
+        <div class="agent-task">等待架构方案完成…</div>
+        <div class="skill-tags">
+          <span class="skill-tag">CU</span><span class="skill-tag">UXS</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑥  审查 Agent ── orange -->
+    <div class="agent-card" data-agent="review" data-state="working"
+         style="--agent-color:#FF9F0A;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#B86000,#FF9F0A);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.14"/>
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#4A2800"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#4A2800"/>
+            <rect x="30" y="112" width="19" height="11" rx="5" fill="#2A1600"/>
+            <rect x="51" y="112" width="19" height="11" rx="5" fill="#2A1600"/>
+            <!-- body — inspector coat orange -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#CC7800"/>
+            <!-- coat lapels -->
+            <path d="M44 56 L50 64 L56 56 L60 56 L50 68 L40 56Z" fill="#AA6000"/>
+            <!-- ID badge -->
+            <rect x="56" y="62" width="12" height="15" rx="2" fill="#1A1A1A" stroke="#FF9F0A" stroke-width="0.8"/>
+            <rect x="58" y="64" width="8" height="5" rx="1" fill="#FF9F0A" opacity="0.4"/>
+            <line x1="58" y1="71" x2="66" y2="71" stroke="#aaa" stroke-width="0.7"/>
+            <line x1="58" y1="74" x2="64" y2="74" stroke="#aaa" stroke-width="0.7"/>
+            <!-- left arm (holding clipboard) -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q17 73 15 86" stroke="#CC7800" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="15" cy="87" r="7" fill="#F5C5A3"/>
+              <!-- clipboard -->
+              <rect x="2" y="75" width="20" height="26" rx="3" fill="#F5E6C8" stroke="#8B6914" stroke-width="1"/>
+              <!-- clip at top -->
+              <rect x="7" y="73" width="10" height="5" rx="1.5" fill="#CC7800"/>
+              <!-- checklist items -->
+              <rect x="5" y="82" width="4" height="4" rx="1" fill="none" stroke="#CC7800" stroke-width="1"/>
+              <line x1="11" y1="84" x2="20" y2="84" stroke="#333" stroke-width="0.8"/>
+              <!-- checked item -->
+              <rect x="5" y="88" width="4" height="4" rx="1" fill="#30D158"/>
+              <path d="M6 90 L7.5 92 L10 89" stroke="white" stroke-width="1" fill="none" stroke-linecap="round"/>
+              <line x1="11" y1="90" x2="20" y2="90" stroke="#333" stroke-width="0.8"/>
+              <rect x="5" y="94" width="4" height="4" rx="1" fill="none" stroke="#CC7800" stroke-width="1"/>
+              <line x1="11" y1="96" x2="20" y2="96" stroke="#333" stroke-width="0.8"/>
+            </g>
+            <!-- right arm (magnifying glass) -->
+            <g class="c-arm-r">
+              <path d="M71 62 Q84 68 88 76" stroke="#CC7800" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="88" cy="77" r="7" fill="#F5C5A3"/>
+              <!-- magnifying glass -->
+              <circle cx="88" cy="65" r="10" fill="none" stroke="#CC7800" stroke-width="3"/>
+              <circle cx="88" cy="65" r="7" fill="rgba(255,159,10,0.1)" stroke="#FF9F0A" stroke-width="0.8"/>
+              <line x1="95" y1="72" x2="100" y2="77" stroke="#8B6000" stroke-width="3" stroke-linecap="round"/>
+              <!-- lens glint -->
+              <path d="M83 60 Q85 58 87 59" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.6"/>
+            </g>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- ears -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <!-- slicked back professional hair -->
+            <path d="M28 22 Q50 8 72 22 Q72 16 70 12 Q60 4 50 3 Q40 4 30 12 Q28 16 28 22Z" fill="#2C2C2C"/>
+            <!-- slick parting line -->
+            <path d="M36 12 Q40 18 38 24" stroke="#1A1A1A" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+            <!-- monocle on right eye -->
+            <circle cx="61" cy="34" r="8" fill="none" stroke="#CC7800" stroke-width="1.8"/>
+            <line x1="69" y1="34" x2="72" y2="38" stroke="#CC7800" stroke-width="1.5" stroke-linecap="round"/>
+            <!-- eyes (scrutinizing) -->
+            <ellipse cx="41" cy="34" rx="5.5" ry="5" fill="white"/>
+            <ellipse cx="59" cy="34" rx="5.5" ry="6" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="34" rx="3.8" ry="3.8" fill="#FF9F0A" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="34" rx="4" ry="4.5" fill="#FF9F0A" opacity="0.9"/>
+            <ellipse cx="43" cy="34" rx="2" ry="2" fill="#6B3800"/>
+            <ellipse cx="61" cy="34.5" rx="2" ry="2.5" fill="#6B3800"/>
+            <circle cx="44" cy="31.5" r="1.4" fill="white" opacity="0.85"/>
+            <circle cx="62" cy="31.5" r="1.5" fill="white" opacity="0.85"/>
+            <!-- scrutinizing eyebrows (slight squint) -->
+            <path d="M37 26 Q42 24 47 27" stroke="#2C2C2C" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M53 26 Q58 23 63 26" stroke="#2C2C2C" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (firm, professional) -->
+            <path d="M44 45 L56 45" stroke="#C4836A" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <text class="star-p" x="10" y="22" font-size="10" style="--dx:-14px;--dy:-22px;animation-delay:0.1s">⭐</text>
+            <text class="star-p" x="80" y="28" font-size="8"  style="--dx:14px;--dy:-16px;animation-delay:0.5s">✨</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#FF9F0A;">审查 Agent</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">工作中</span></span>
+        </div>
+        <div class="agent-role">每阶段出口质量门 · 验证检查</div>
+        <div class="agent-task">代码审查 Story B-041…</div>
+        <div class="skill-tags">
+          <span class="skill-tag">VP</span><span class="skill-tag">IR</span>
+          <span class="skill-tag">CR</span><span class="skill-tag">AR</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑦  测试 Agent ── yellow -->
+    <div class="agent-card" data-agent="test" data-state="idle"
+         style="--agent-color:#FFD60A;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#9A8000,#FFD60A);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.14"/>
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#4A4000"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#4A4000"/>
+            <rect x="30" y="112" width="19" height="11" rx="5" fill="#2A2400"/>
+            <rect x="51" y="112" width="19" height="11" rx="5" fill="#2A2400"/>
+            <!-- safety vest over shirt -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#4A4A4A"/>
+            <!-- vest panels -->
+            <rect x="29" y="56" width="14" height="36" rx="0" fill="#9A8000"/>
+            <rect x="29" y="56" width="14" height="36" rx="10" fill="#9A8000"/>
+            <rect x="57" y="56" width="14" height="36" rx="0" fill="#9A8000"/>
+            <rect x="57" y="56" width="14" height="36" rx="10" fill="#9A8000"/>
+            <!-- reflective strips -->
+            <rect x="29" y="70" width="14" height="3" rx="1" fill="#FFD60A" opacity="0.7"/>
+            <rect x="57" y="70" width="14" height="3" rx="1" fill="#FFD60A" opacity="0.7"/>
+            <rect x="29" y="76" width="14" height="3" rx="1" fill="#FFD60A" opacity="0.5"/>
+            <rect x="57" y="76" width="14" height="3" rx="1" fill="#FFD60A" opacity="0.5"/>
+            <!-- left arm (holding test tube rack) -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q17 74 15 87" stroke="#4A4A4A" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="15" cy="88" r="7" fill="#F5C5A3"/>
+              <!-- test tube -->
+              <rect x="9" y="70" width="7" height="22" rx="3.5" fill="rgba(100,210,255,0.3)" stroke="#64D2FF" stroke-width="1.2"/>
+              <ellipse cx="12.5" cy="70" rx="3.5" ry="2" fill="rgba(100,210,255,0.5)"/>
+              <ellipse cx="12.5" cy="92" rx="3.5" ry="2" fill="#64D2FF" opacity="0.8"/>
+              <!-- test tube 2 -->
+              <rect x="18" y="68" width="7" height="22" rx="3.5" fill="rgba(255,159,10,0.3)" stroke="#FF9F0A" stroke-width="1.2"/>
+              <ellipse cx="21.5" cy="68" rx="3.5" ry="2" fill="rgba(255,159,10,0.5)"/>
+              <ellipse cx="21.5" cy="90" rx="3.5" ry="2" fill="#FF9F0A" opacity="0.8"/>
+            </g>
+            <!-- right arm -->
+            <g class="c-arm-r">
+              <path d="M71 63 Q83 73 86 83" stroke="#4A4A4A" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="86" cy="84" r="7" fill="#F5C5A3"/>
+            </g>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- ears -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <!-- bright yellow spiky hair -->
+            <path d="M29 24 Q35 8 50 5 Q65 8 71 24" fill="#FFD60A"/>
+            <!-- spikes -->
+            <path d="M34 18 Q36 5  38 16" fill="#FFD60A"/>
+            <path d="M42 12 Q45 0  48 12" fill="#FFD60A"/>
+            <path d="M52 12 Q55 0  58 13" fill="#FFD60A"/>
+            <path d="M62 18 Q65 6  67 19" fill="#FFD60A"/>
+            <!-- safety goggles pushed up on head -->
+            <rect x="32" y="16" width="36" height="10" rx="5" fill="#2A2400" opacity="0.9"/>
+            <rect x="33" y="17" width="14" height="8" rx="4" fill="rgba(100,210,255,0.4)" stroke="#FFD60A" stroke-width="1"/>
+            <rect x="53" y="17" width="14" height="8" rx="4" fill="rgba(100,210,255,0.4)" stroke="#FFD60A" stroke-width="1"/>
+            <line x1="47" y1="21" x2="53" y2="21" stroke="#FFD60A" stroke-width="1.5"/>
+            <!-- eyes (alert, wide) -->
+            <ellipse cx="41" cy="34" rx="6" ry="6.5" fill="white"/>
+            <ellipse cx="59" cy="34" rx="6" ry="6.5" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="34" rx="4.5" ry="5" fill="#FFD60A" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="34" rx="4.5" ry="5" fill="#FFD60A" opacity="0.9"/>
+            <ellipse cx="43" cy="34.5" rx="2.2" ry="2.5" fill="#4A3800"/>
+            <ellipse cx="61" cy="34.5" rx="2.2" ry="2.5" fill="#4A3800"/>
+            <circle cx="44.5" cy="31" r="1.6" fill="white" opacity="0.85"/>
+            <circle cx="62.5" cy="31" r="1.6" fill="white" opacity="0.85"/>
+            <!-- alert eyebrows (raised) -->
+            <path d="M36 25 Q41 21 47 23" stroke="#4A3800" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M53 23 Q59 21 64 25" stroke="#4A3800" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (alert O shape / concentrated) -->
+            <ellipse cx="50" cy="46" rx="4" ry="3" fill="none" stroke="#C4836A" stroke-width="1.8"/>
+            <!-- bug icon floating -->
+            <text x="78" y="20" font-size="12" opacity="0.7">🐛</text>
+            <line x1="78" y1="22" x2="74" y2="30" stroke="#FFD60A" stroke-width="0.8" stroke-dasharray="2,2" opacity="0.5"/>
+            <text class="star-p" x="10" y="22" font-size="10" style="--dx:-14px;--dy:-22px;animation-delay:0.1s">⭐</text>
+            <text class="star-p" x="80" y="28" font-size="8"  style="--dx:14px;--dy:-16px;animation-delay:0.5s">✨</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#FFD60A;">测试 Agent</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">空闲</span></span>
+        </div>
+        <div class="agent-role">自动化测试 · 覆盖率验证</div>
+        <div class="agent-task">等待研发 Agent 完成…</div>
+        <div class="skill-tags">
+          <span class="skill-tag">QA</span><span class="skill-tag">E2E</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑧  部署 Agent ── gray -->
+    <div class="agent-card" data-agent="deploy" data-state="idle"
+         style="--agent-color:#98989D;"
+         onclick="cardClick(this)">
+      <div class="card-top-bar" style="background:linear-gradient(90deg,#3A3A3C,#98989D);"></div>
+      <div class="char-stage">
+        <svg class="char-svg" viewBox="0 0 100 140" fill="none">
+          <g class="c-group">
+            <ellipse cx="50" cy="136" rx="18" ry="4" fill="#000" opacity="0.14"/>
+            <rect x="36" y="90" width="12" height="30" rx="6" fill="#2C2C2E"/>
+            <rect x="52" y="90" width="12" height="30" rx="6" fill="#2C2C2E"/>
+            <rect x="30" y="112" width="19" height="11" rx="5" fill="#1A1A1C"/>
+            <rect x="51" y="112" width="19" height="11" rx="5" fill="#1A1A1C"/>
+            <!-- ops jacket - dark gray -->
+            <rect x="29" y="56" width="42" height="36" rx="10" fill="#3A3A3C"/>
+            <!-- jacket collar -->
+            <path d="M44 56 L50 64 L56 56" fill="#2C2C2E"/>
+            <!-- pocket zip -->
+            <rect x="31" y="66" width="14" height="12" rx="2" fill="#2C2C2E" stroke="#98989D" stroke-width="0.7"/>
+            <line x1="38" y1="66" x2="38" y2="78" stroke="#98989D" stroke-width="0.7" opacity="0.6"/>
+            <!-- ROCKET badge on chest -->
+            <circle cx="60" cy="65" r="8" fill="#1A1A1C" stroke="#98989D" stroke-width="0.8"/>
+            <text x="60" y="69" font-size="10" text-anchor="middle">🚀</text>
+            <!-- left arm (holding wrench) -->
+            <g class="c-arm-l">
+              <path d="M29 63 Q17 73 15 86" stroke="#3A3A3C" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="15" cy="87" r="7" fill="#F5C5A3"/>
+              <!-- wrench -->
+              <path d="M8 68 Q12 60 18 64 L16 72 Q14 80 10 82 Q6 80 6 76 Q6 70 8 68Z" fill="#98989D" stroke="#6A6A6A" stroke-width="0.8"/>
+              <rect x="11" y="72" width="5" height="20" rx="2.5" fill="#98989D" stroke="#6A6A6A" stroke-width="0.7" transform="rotate(15 13 82)"/>
+              <!-- wrench head detail -->
+              <circle cx="13" cy="64" r="4" fill="none" stroke="#6A6A6A" stroke-width="1.2"/>
+            </g>
+            <!-- right arm raised (ready!) -->
+            <g class="c-arm-r">
+              <path d="M71 60 Q84 55 90 62" stroke="#3A3A3C" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="90" cy="63" r="7" fill="#F5C5A3"/>
+              <!-- thumbs up fist -->
+              <path d="M90 55 L90 50" stroke="#F5C5A3" stroke-width="4.5" stroke-linecap="round"/>
+            </g>
+            <!-- neck -->
+            <rect x="45" y="51" width="10" height="7" rx="5" fill="#F5C5A3"/>
+            <!-- head -->
+            <circle cx="50" cy="34" r="22" fill="#F5C5A3"/>
+            <!-- ears -->
+            <ellipse cx="28" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <ellipse cx="72" cy="35" rx="4" ry="5" fill="#F5C5A3"/>
+            <!-- practical short dark hair -->
+            <path d="M28 24 Q50 11 72 24 Q72 18 68 13 Q60 5 50 4 Q40 5 32 13 Q28 18 28 24Z" fill="#2C2C2C"/>
+            <!-- slight fade/texture on sides -->
+            <path d="M28 24 Q27 29 28 36" stroke="#1A1A1A" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+            <path d="M72 24 Q73 29 72 36" stroke="#1A1A1A" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+            <!-- eyes (action-ready, determined) -->
+            <ellipse cx="41" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse cx="59" cy="33" rx="5.5" ry="6" fill="white"/>
+            <ellipse class="c-eye-iris" cx="42" cy="33" rx="4" ry="4.5" fill="#98989D" opacity="0.9"/>
+            <ellipse class="c-eye-iris" cx="60" cy="33" rx="4" ry="4.5" fill="#98989D" opacity="0.9"/>
+            <ellipse cx="43" cy="33.5" rx="2" ry="2.5" fill="#2C2C2C"/>
+            <ellipse cx="61" cy="33.5" rx="2" ry="2.5" fill="#2C2C2C"/>
+            <circle cx="44.5" cy="30.5" r="1.5" fill="white" opacity="0.85"/>
+            <circle cx="62.5" cy="30.5" r="1.5" fill="white" opacity="0.85"/>
+            <!-- determined eyebrows -->
+            <path d="M37 25 Q42 22 47 24" stroke="#2C2C2C" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M53 24 Q58 22 63 25" stroke="#2C2C2C" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <!-- nose -->
+            <path d="M49 39 Q50 41 51 39" stroke="#E0A87A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- mouth (confident grin) -->
+            <path d="M43 44 Q50 50 57 44" stroke="#C4836A" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- server rack icon -->
+            <rect x="4" y="20" width="20" height="28" rx="3" fill="#1A1A1C" stroke="#98989D" stroke-width="0.8" opacity="0.8"/>
+            <rect x="6" y="22" width="16" height="5" rx="1" fill="#2C2C2E"/>
+            <circle cx="19" cy="24.5" r="1.5" fill="#30D158"/>
+            <rect x="6" y="29" width="16" height="5" rx="1" fill="#2C2C2E"/>
+            <circle cx="19" cy="31.5" r="1.5" fill="#30D158"/>
+            <rect x="6" y="36" width="16" height="5" rx="1" fill="#2C2C2E"/>
+            <circle cx="19" cy="38.5" r="1.5" fill="#FF453A"/>
+            <text class="star-p" x="10" y="22" font-size="10" style="--dx:-14px;--dy:-22px;animation-delay:0.1s">⭐</text>
+            <text class="star-p" x="80" y="28" font-size="8"  style="--dx:14px;--dy:-16px;animation-delay:0.5s">🚀</text>
+            <text class="star-p" x="50" y="8"  font-size="8"  style="--dx:3px;--dy:-14px;animation-delay:0.3s">✨</text>
+          </g>
+        </svg>
+      </div>
+      <div class="card-info">
+        <div class="agent-name-row">
+          <div class="agent-name" style="color:#98989D;">部署 Agent</div>
+          <span class="status-pill"><span class="status-dot"></span><span class="s-text">空闲</span></span>
+        </div>
+        <div class="agent-role">CI/CD · 环境管理 · 发布</div>
+        <div class="agent-task">等待测试通过…</div>
+        <div class="skill-tags">
+          <span class="skill-tag">CI/CD</span><span class="skill-tag">ENV</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /agent-grid -->
+</main>
+
+<!-- Detail panel -->
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-inner">
+    <svg class="detail-char" id="detail-char" viewBox="0 0 100 140" fill="none"></svg>
+    <div class="detail-text">
+      <div class="detail-name" id="detail-name">—</div>
+      <div class="detail-desc" id="detail-desc">—</div>
+      <div class="detail-skills" id="detail-skills"></div>
+    </div>
+    <div class="detail-close" onclick="closeDetail()">×</div>
+  </div>
+</div>
+
+<script>
+
+/* ── Theme ── */
+function setTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('btn-light').classList.toggle('on', t==='light');
+  document.getElementById('btn-dark').classList.toggle('on', t==='dark');
+}
+if (window.matchMedia('(prefers-color-scheme: light)').matches) setTheme('light');
+
+/* ── State cycling ── */
+const STATES   = ['idle','working','done'];
+const LABELS   = { idle:'空闲', working:'工作中', done:'已完成' };
+const TASKS = {
+  commander: { idle:'等待指令…', working:'正在分配 Sprint 3 优先级…', done:'Sprint 计划已完成 ✓' },
+  product:   { idle:'等待下一个需求…', working:'正在解析 PRD 文档…', done:'PRD 已生成 ✓' },
+  arch:      { idle:'等待需求确认…', working:'正在设计系统架构…', done:'架构方案 v2.3 已交付 ✓' },
+  dev:       { idle:'等待架构方案…', working:'Story B-042 实现中 (67%)…', done:'Story B-042 已提交 ✓' },
+  ux:        { idle:'等待架构方案完成…', working:'正在绘制交互流程…', done:'UX 规格已完成 ✓' },
+  review:    { idle:'等待产出物…', working:'代码审查 Story B-041…', done:'审查通过，无阻塞项 ✓' },
+  test:      { idle:'等待研发 Agent 完成…', working:'运行测试套件 (247 cases)…', done:'测试 100% 通过 ✓' },
+  deploy:    { idle:'等待测试通过…', working:'正在部署到 Staging 环境…', done:'v2.3.0 已上线 🚀' },
+};
+
+function cardClick(el) {
+  const agent = el.dataset.agent;
+  const cur   = STATES.indexOf(el.dataset.state);
+  const next  = STATES[(cur + 1) % 3];
+  el.dataset.state = next;
+  el.querySelector('.s-text').textContent = LABELS[next];
+  el.querySelector('.agent-task').textContent = TASKS[agent]?.[next] ?? '';
+}
+
+/* ── Space: toggle all working ── */
+let allWorking = false;
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target.tagName !== 'INPUT') {
+    e.preventDefault();
+    allWorking = !allWorking;
+    document.querySelectorAll('.agent-card').forEach(c => {
+      c.dataset.state = allWorking ? 'working' : 'idle';
+      c.querySelector('.s-text').textContent = allWorking ? LABELS.working : LABELS.idle;
+      const agent = c.dataset.agent;
+      c.querySelector('.agent-task').textContent = TASKS[agent]?.[allWorking ? 'working' : 'idle'] ?? '';
+    });
+  }
+});
+
+/* ── Detail panel ── */
+const DETAIL = {
+  commander: { name:'指挥官', desc:'全局调度中心，负责工作规划、Sprint 管理、Backlog 建立和所有人工审批节点协调。是你唯一需要对话的 Agent——它帮你管理其余 7 个。', skills:['SP · Sprint 规划','CE · Backlog 建立','CS · Story 上下文','SS · 进度查询','ER · Epic 复盘','CC · 任务协调'] },
+  product:   { name:'产品 Agent', desc:'深度解析 PRD 文档，生成结构化需求，维护需求生命周期。从商业分析到功能定义，负责所有产品层面的分析与产出。', skills:['BP · 商业分析','DR · 需求解析','CP · PRD 创建','EP · PRD 迭代','MR · 市场研究'] },
+  arch:      { name:'架构 Agent', desc:'评估技术可行性，输出系统架构决策记录（ADR），设计服务边界和接口契约。所有重大技术决策经过它的分析。', skills:['CA · 架构创建','ADR · 决策记录','接口设计','技术评估'] },
+  dev:       { name:'研发 Agent', desc:'实现每个 User Story，编写单元测试。一个需求可以同时启动多个研发 Agent 实例并行工作，加速开发。', skills:['DS · Story 开发','单元测试','代码提交','多实例并行'] },
+  ux:        { name:'UX Agent', desc:'基于需求分析结果，产出交互规格说明、用户流程图和组件设计指引，为研发实现提供精准参照。', skills:['CU · UX 规格','用户流程','交互设计','组件指引'] },
+  review:    { name:'审查 Agent', desc:'每个阶段的出口质量门。验证产品方案、技术架构、代码实现，确保每一步输出符合标准后才放行到下一阶段。', skills:['VP · 方案验证','IR · 实现审查','CR · 代码审查','AR · 架构审查','ECH · 合规检查'] },
+  test:      { name:'测试 Agent', desc:'执行自动化测试套件，生成测试报告，追踪覆盖率。发现缺陷后直接反馈给研发 Agent 修复，闭环处理。', skills:['QA · 质量保障','E2E 测试','覆盖率分析','缺陷追踪'] },
+  deploy:    { name:'部署 Agent', desc:'对接 CI/CD 流水线，管理多环境部署（Dev / Staging / Production）。负责版本发布、回滚和环境健康监控。', skills:['CI/CD 集成','环境管理','版本发布','回滚策略'] },
+};
+
+let selectedCard = null;
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  if (selectedCard) { selectedCard.style.transform=''; selectedCard=null; }
+}
+document.querySelectorAll('.agent-card').forEach(card => {
+  card.addEventListener('dblclick', () => {
+    const key  = card.dataset.agent;
+    const d    = DETAIL[key];
+    if (!d) return;
+    document.getElementById('detail-name').textContent = d.name;
+    document.getElementById('detail-desc').textContent = d.desc;
+    const sf = document.getElementById('detail-skills');
+    sf.innerHTML = d.skills.map(s=>`<span class="detail-skill">${s}</span>`).join('');
+    // copy char svg
+    const svg = card.querySelector('.char-svg');
+    const dc  = document.getElementById('detail-char');
+    dc.innerHTML = svg.innerHTML;
+    dc.setAttribute('viewBox', svg.getAttribute('viewBox'));
+    document.getElementById('detail-panel').classList.add('open');
+    selectedCard = card;
+  });
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDetail();
+});
+</script>
+</body>
+</html>

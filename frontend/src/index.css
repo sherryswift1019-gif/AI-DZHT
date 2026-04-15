@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/* ════════════════════════════════════════════════════════
+   AI-DZHT Design Tokens — Dual Theme
+   Based on prototype-design-system.html v2
+════════════════════════════════════════════════════════ */
+
+@theme inline {
+  /* Font */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Agent avatar gradients */
+  --gradient-commander: linear-gradient(135deg, #3730a3, #7c3aed);
+  --gradient-product:   linear-gradient(135deg, #1e3a8a, #2563eb);
+  --gradient-ux:        linear-gradient(135deg, #9d174d, #ec4899);
+  --gradient-arch:      linear-gradient(135deg, #14532d, #16a34a);
+  --gradient-dev:       linear-gradient(135deg, #134e4a, #0891b2);
+  --gradient-review:    linear-gradient(135deg, #7c2d12, #ea580c);
+  --gradient-test:      linear-gradient(135deg, #713f12, #ca8a04);
+  --gradient-deploy:    linear-gradient(135deg, #1f2937, #6b7280);
+}
+
+/* ── LIGHT THEME ── */
+[data-theme="light"] {
+  --bg-base:        #F5F5F7;
+  --bg-panel:       #FFFFFF;
+  --bg-panel-2:     #F5F5F7;
+  --bg-panel-3:     #E8E8ED;
+  --bg-hover:       rgba(0,0,0,0.04);
+  --bg-pressed:     rgba(0,0,0,0.08);
+
+  --border:         rgba(0,0,0,0.08);
+  --border-strong:  rgba(0,0,0,0.16);
+
+  --text-1:         #1D1D1F;
+  --text-2:         #6E6E73;
+  --text-3:         #AEAEB2;
+
+  --shadow-sm:      0 1px 2px rgba(0,0,0,0.05), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow:         0 2px 10px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-lg:      0 8px 30px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+
+  --glass-bg:       rgba(255,255,255,0.78);
+  --glass-border:   rgba(255,255,255,0.6);
+  --glass-blur:     blur(24px) saturate(180%);
+
+  --blue:           #007AFF;
+  --indigo:         #5856D6;
+  --purple:         #AF52DE;
+  --pink:           #FF2D55;
+  --red:            #FF3B30;
+  --orange:         #FF9500;
+  --yellow:         #FFCC00;
+  --green:          #34C759;
+  --teal:           #30B0C7;
+  --cyan:           #32ADE6;
+  --gray:           #8E8E93;
+
+  --accent:         #007AFF;
+  --accent-sub:     rgba(0,122,255,0.08);
+  --success:        #34C759;
+  --success-sub:    rgba(52,199,89,0.09);
+  --warning:        #FF9500;
+  --warning-sub:    rgba(255,149,0,0.09);
+  --danger:         #FF3B30;
+  --danger-sub:     rgba(255,59,48,0.08);
+  --purple-sub:     rgba(175,82,222,0.09);
+}
+
+/* ── DARK THEME (default) ── */
+[data-theme="dark"], :root {
+  --bg-base:        #000000;
+  --bg-panel:       #1C1C1E;
+  --bg-panel-2:     #2C2C2E;
+  --bg-panel-3:     #3A3A3C;
+  --bg-hover:       rgba(255,255,255,0.05);
+  --bg-pressed:     rgba(255,255,255,0.10);
+
+  --border:         rgba(255,255,255,0.09);
+  --border-strong:  rgba(255,255,255,0.18);
+
+  --text-1:         #FFFFFF;
+  --text-2:         #AEAEB2;
+  --text-3:         #48484A;
+
+  --shadow-sm:      0 1px 3px rgba(0,0,0,0.5);
+  --shadow:         0 4px 16px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3);
+  --shadow-lg:      0 12px 40px rgba(0,0,0,0.65), 0 3px 10px rgba(0,0,0,0.4);
+
+  --glass-bg:       rgba(28,28,30,0.78);
+  --glass-border:   rgba(255,255,255,0.10);
+  --glass-blur:     blur(24px) saturate(160%);
+
+  --blue:           #0A84FF;
+  --indigo:         #5E5CE6;
+  --purple:         #BF5AF2;
+  --pink:           #FF375F;
+  --red:            #FF453A;
+  --orange:         #FF9F0A;
+  --yellow:         #FFD60A;
+  --green:          #30D158;
+  --teal:           #40CBE0;
+  --cyan:           #64D2FF;
+  --gray:           #98989D;
+
+  --accent:         #0A84FF;
+  --accent-sub:     rgba(10,132,255,0.14);
+  --success:        #30D158;
+  --success-sub:    rgba(48,209,88,0.13);
+  --warning:        #FF9F0A;
+  --warning-sub:    rgba(255,159,10,0.13);
+  --danger:         #FF453A;
+  --danger-sub:     rgba(255,69,58,0.13);
+  --purple-sub:     rgba(191,90,242,0.13);
+}
+
+/* ════════════════════════════════════════════════════════
+   BASE RESET & FOUNDATION
+════════════════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-base);
+  color: var(--text-1);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition-property: background-color, border-color, box-shadow, color;
+  transition-duration: 0.2s;
+  transition-timing-function: ease;
+}
+
+/* But don't transition transforms/positions globally */
+button, a, [role="button"] {
+  transition: background-color 0.2s ease, border-color 0.2s ease,
+              box-shadow 0.2s ease, color 0.2s ease,
+              transform 0.15s ease, opacity 0.2s ease;
+}

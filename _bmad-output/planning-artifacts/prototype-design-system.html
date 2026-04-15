@@ -1,0 +1,2014 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-DZHT · Design System v2 · Premium</title>
+<style>
+
+/* ════════════════════════════════════════════════════════════
+   DESIGN TOKENS — DUAL THEME
+   Apple System Color philosophy: 双主题自适应，所有颜色经过独立优化
+════════════════════════════════════════════════════════════ */
+
+/* ── LIGHT ── */
+[data-theme="light"] {
+  /* Backgrounds */
+  --bg-base:        #F5F5F7;
+  --bg-panel:       #FFFFFF;
+  --bg-panel-2:     #F5F5F7;
+  --bg-panel-3:     #E8E8ED;
+  --bg-hover:       rgba(0,0,0,0.04);
+  --bg-pressed:     rgba(0,0,0,0.08);
+
+  /* Borders */
+  --border:         rgba(0,0,0,0.08);
+  --border-strong:  rgba(0,0,0,0.16);
+
+  /* Text */
+  --text-1:         #1D1D1F;
+  --text-2:         #6E6E73;
+  --text-3:         #AEAEB2;
+
+  /* Shadows */
+  --shadow-sm:      0 1px 2px rgba(0,0,0,0.05), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow:         0 2px 10px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-lg:      0 8px 30px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+
+  /* Glass */
+  --glass-bg:       rgba(255,255,255,0.78);
+  --glass-border:   rgba(255,255,255,0.6);
+  --glass-blur:     blur(24px) saturate(180%);
+
+  /* System Colors — calibrated for light bg */
+  --blue:           #007AFF;
+  --indigo:         #5856D6;
+  --purple:         #AF52DE;
+  --pink:           #FF2D55;
+  --red:            #FF3B30;
+  --orange:         #FF9500;
+  --yellow:         #FFCC00;
+  --green:          #34C759;
+  --teal:           #30B0C7;
+  --cyan:           #32ADE6;
+  --gray:           #8E8E93;
+
+  /* Semantic */
+  --accent:         #007AFF;
+  --accent-sub:     rgba(0,122,255,0.08);
+  --success:        #34C759;
+  --success-sub:    rgba(52,199,89,0.09);
+  --warning:        #FF9500;
+  --warning-sub:    rgba(255,149,0,0.09);
+  --danger:         #FF3B30;
+  --danger-sub:     rgba(255,59,48,0.08);
+  --purple-sub:     rgba(175,82,222,0.09);
+}
+
+/* ── DARK ── */
+[data-theme="dark"] {
+  /* Backgrounds */
+  --bg-base:        #000000;
+  --bg-panel:       #1C1C1E;
+  --bg-panel-2:     #2C2C2E;
+  --bg-panel-3:     #3A3A3C;
+  --bg-hover:       rgba(255,255,255,0.05);
+  --bg-pressed:     rgba(255,255,255,0.10);
+
+  /* Borders */
+  --border:         rgba(255,255,255,0.09);
+  --border-strong:  rgba(255,255,255,0.18);
+
+  /* Text */
+  --text-1:         #FFFFFF;
+  --text-2:         #AEAEB2;
+  --text-3:         #48484A;
+
+  /* Shadows */
+  --shadow-sm:      0 1px 3px rgba(0,0,0,0.5);
+  --shadow:         0 4px 16px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3);
+  --shadow-lg:      0 12px 40px rgba(0,0,0,0.65), 0 3px 10px rgba(0,0,0,0.4);
+
+  /* Glass */
+  --glass-bg:       rgba(28,28,30,0.78);
+  --glass-border:   rgba(255,255,255,0.10);
+  --glass-blur:     blur(24px) saturate(160%);
+
+  /* System Colors — calibrated for dark bg */
+  --blue:           #0A84FF;
+  --indigo:         #5E5CE6;
+  --purple:         #BF5AF2;
+  --pink:           #FF375F;
+  --red:            #FF453A;
+  --orange:         #FF9F0A;
+  --yellow:         #FFD60A;
+  --green:          #30D158;
+  --teal:           #40CBE0;
+  --cyan:           #64D2FF;
+  --gray:           #98989D;
+
+  /* Semantic */
+  --accent:         #0A84FF;
+  --accent-sub:     rgba(10,132,255,0.14);
+  --success:        #30D158;
+  --success-sub:    rgba(48,209,88,0.13);
+  --warning:        #FF9F0A;
+  --warning-sub:    rgba(255,159,10,0.13);
+  --danger:         #FF453A;
+  --danger-sub:     rgba(255,69,58,0.13);
+  --purple-sub:     rgba(191,90,242,0.13);
+}
+
+/* ════════════════════════════════════════════════════════════
+   BASE RESET & FOUNDATION
+════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-1);
+  line-height: 1.5;
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.2s ease;
+}
+
+/* Global transition for theme switching */
+*, *::before, *::after {
+  transition-property: background-color, border-color, box-shadow, opacity;
+  transition-duration: 0.25s;
+  transition-timing-function: ease;
+}
+
+/* Exclude transforms from global transition */
+button, .card, .action-item, .agent-card, .list-row {
+  transition: background-color 0.25s ease, border-color 0.25s ease,
+              box-shadow 0.25s ease, color 0.25s ease,
+              transform 0.15s ease, opacity 0.25s ease;
+}
+
+/* ════════════════════════════════════════════════════════════
+   PAGE STRUCTURE
+════════════════════════════════════════════════════════════ */
+
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  padding: 0 40px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+}
+.brand-name  { font-size: 14px; font-weight: 700; letter-spacing: -0.3px; color: var(--text-1); }
+.brand-sub   { font-size: 11px; color: var(--text-3); letter-spacing: 0.2px; }
+
+.main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 40px 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 64px;
+}
+
+.ds-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.section-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-1);
+  margin-top: -2px;
+}
+
+.section-desc {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-top: -12px;
+  line-height: 1.6;
+}
+
+/* ════════════════════════════════════════════════════════════
+   THEME TOGGLE — Apple Segmented Control style
+════════════════════════════════════════════════════════════ */
+
+.seg-ctrl {
+  display: flex;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  color: var(--text-2);
+  background: transparent;
+  font-family: inherit;
+  letter-spacing: -0.1px;
+}
+
+.seg-btn.active {
+  background: var(--bg-panel);
+  color: var(--text-1);
+  box-shadow: var(--shadow-sm);
+}
+
+.seg-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+/* ════════════════════════════════════════════════════════════
+   LAYOUT HELPERS
+════════════════════════════════════════════════════════════ */
+
+.grid-2  { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid-3  { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.grid-4  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.grid-auto-200 { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 12px; }
+.flex-row  { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.flex-col  { display: flex; flex-direction: column; gap: 8px; }
+.flex-between { display: flex; align-items: center; justify-content: space-between; }
+.divider { height: 1px; background: var(--border); }
+
+/* ════════════════════════════════════════════════════════════
+   PANEL / SURFACE
+════════════════════════════════════════════════════════════ */
+
+.panel {
+  background: var(--bg-panel);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.panel-body   { padding: 20px 24px; }
+.panel-body-lg { padding: 28px 32px; }
+
+.panel-hdr {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-hdr-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.2px;
+}
+
+.panel-glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+/* ════════════════════════════════════════════════════════════
+   1. COLOR SWATCHES
+════════════════════════════════════════════════════════════ */
+
+.swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap: 12px; }
+
+.swatch {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.swatch-block {
+  height: 68px;
+  position: relative;
+}
+
+.swatch-block-label {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  letter-spacing: 0.3px;
+}
+
+.swatch-info {
+  background: var(--bg-panel);
+  padding: 9px 12px;
+}
+
+.swatch-name  { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.swatch-token { font-size: 10px; color: var(--text-3); font-family: "SF Mono", Menlo, monospace; margin-top: 1px; }
+
+/* Token table */
+.token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.token-row:last-child { border-bottom: none; }
+.token-key   { font-family: "SF Mono", Menlo, monospace; color: var(--text-2); }
+.token-val   { color: var(--text-1); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.token-chip  { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--border); flex-shrink: 0; }
+
+/* ════════════════════════════════════════════════════════════
+   2. TYPOGRAPHY
+════════════════════════════════════════════════════════════ */
+
+.type-row {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.type-row:last-child { border-bottom: none; }
+.type-meta { font-size: 10px; color: var(--text-3); font-family: "SF Mono", Menlo, monospace; letter-spacing: 0.3px; }
+
+/* ════════════════════════════════════════════════════════════
+   3. BUTTONS
+════════════════════════════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled:active { transform: none; }
+
+/* Filled — Primary blue */
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px rgba(0,122,255,0.35);
+  transform: translateY(-1px);
+}
+
+/* Filled — Gray secondary */
+.btn-secondary {
+  background: var(--bg-panel-2);
+  color: var(--text-1);
+  border: 1px solid var(--border-strong);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--bg-panel-3); }
+
+/* Tinted — Accent subtle */
+.btn-tint {
+  background: var(--accent-sub);
+  color: var(--accent);
+}
+.btn-tint:hover:not(:disabled) { background: var(--accent); color: #fff; }
+
+/* Tinted — Danger */
+.btn-danger {
+  background: var(--danger-sub);
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) { background: var(--danger); color: #fff; }
+
+/* Tinted — Success */
+.btn-success {
+  background: var(--success-sub);
+  color: var(--success);
+}
+.btn-success:hover:not(:disabled) { background: var(--success); color: #fff; }
+[data-theme="light"] .btn-success:hover:not(:disabled) { color: #fff; }
+
+/* Tinted — Warning */
+.btn-warn {
+  background: var(--warning-sub);
+  color: var(--warning);
+}
+.btn-warn:hover:not(:disabled) { background: var(--warning); color: #fff; }
+
+/* Commander gradient */
+.btn-cmd {
+  background: linear-gradient(135deg, var(--indigo), var(--purple));
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(94,92,230,0.3);
+}
+.btn-cmd:hover:not(:disabled) {
+  box-shadow: 0 4px 20px rgba(94,92,230,0.45);
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+/* Ghost */
+.btn-ghost { background: transparent; color: var(--accent); }
+.btn-ghost:hover:not(:disabled) { background: var(--accent-sub); }
+
+/* Icon button */
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  background: var(--bg-panel-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  font-size: 15px;
+}
+.btn-icon:hover { color: var(--text-1); background: var(--bg-panel-3); }
+
+/* Sizes */
+.btn-xs  { padding: 4px 10px; font-size: 12px; border-radius: 7px; }
+.btn-sm  { padding: 6px 13px; font-size: 13px; border-radius: 8px; }
+.btn-lg  { padding: 13px 26px; font-size: 17px; border-radius: 12px; }
+.btn-xl  { padding: 16px 36px; font-size: 19px; border-radius: 14px; font-weight: 600; }
+
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 15px; height: 15px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: rgba(255,255,255,0.9);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+.btn-secondary .spinner {
+  border-color: var(--border-strong);
+  border-top-color: var(--text-2);
+}
+
+/* ════════════════════════════════════════════════════════════
+   4. BADGE & STATUS
+════════════════════════════════════════════════════════════ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+}
+
+.badge-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+@keyframes badge-pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.6); }
+}
+
+.badge-anim .badge-dot { animation: badge-pulse 1.5s ease infinite; }
+
+.b-blue   { background: var(--accent-sub);  color: var(--blue); }
+.b-green  { background: var(--success-sub); color: var(--green); }
+.b-orange { background: var(--warning-sub); color: var(--orange); }
+.b-red    { background: var(--danger-sub);  color: var(--red); }
+.b-purple { background: var(--purple-sub);  color: var(--purple); }
+.b-gray   { background: var(--bg-panel-2);  color: var(--text-2); border: 1px solid var(--border); }
+
+/* Status icons — GitHub style */
+.si {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.si-done    { background: var(--success); color: #fff; }
+.si-run     { background: var(--warning); color: #fff; }
+.si-wait    { background: var(--accent);  color: #fff; }
+.si-err     { background: var(--danger);  color: #fff; }
+.si-idle    { background: var(--bg-panel-3); color: var(--text-3); border: 1px solid var(--border); }
+
+/* ════════════════════════════════════════════════════════════
+   5. INPUT
+════════════════════════════════════════════════════════════ */
+
+.input-group { display: flex; flex-direction: column; gap: 6px; }
+.input-label { font-size: 13px; font-weight: 500; color: var(--text-1); }
+
+.input {
+  width: 100%;
+  background: var(--bg-panel);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 9px 13px;
+  font-size: 15px;
+  color: var(--text-1);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input::placeholder { color: var(--text-3); }
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-sub);
+}
+.input.has-error { border-color: var(--danger); }
+.input.has-error:focus { box-shadow: 0 0 0 3px var(--danger-sub); }
+
+.input-hint { font-size: 12px; color: var(--text-3); }
+.input-err-msg { font-size: 12px; color: var(--danger); }
+
+/* Commander Input — special treatment */
+.cmd-wrap {
+  background: var(--bg-panel);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.cmd-wrap:focus-within {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px var(--purple-sub), var(--shadow);
+}
+
+.cmd-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.cmd-avatar {
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--indigo), var(--purple));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(94,92,230,0.3);
+}
+
+.cmd-field {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: var(--text-1);
+  font-family: inherit;
+}
+.cmd-field::placeholder { color: var(--text-3); }
+
+.cmd-bottom {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-panel-2);
+}
+
+.cmd-ctx { font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
+.cmd-ctx-tag {
+  background: var(--accent-sub);
+  color: var(--accent);
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kbd {
+  background: var(--bg-panel-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: var(--text-2);
+}
+.cmd-shortcut { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 3px; }
+
+/* ════════════════════════════════════════════════════════════
+   6. CARDS
+════════════════════════════════════════════════════════════ */
+
+.card {
+  background: var(--bg-panel);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  cursor: default;
+}
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+.card-body { padding: 18px 20px; }
+
+/* Semantic left border accent */
+.card-blue   { border-left: 3px solid var(--blue); }
+.card-green  { border-left: 3px solid var(--green); }
+.card-orange { border-left: 3px solid var(--orange); }
+.card-red    { border-left: 3px solid var(--red); }
+.card-purple { border-left: 3px solid var(--purple); }
+
+.card-title    { font-size: 15px; font-weight: 600; color: var(--text-1); letter-spacing: -0.2px; }
+.card-subtitle { font-size: 13px; color: var(--text-2); margin-top: 3px; }
+.card-stat     { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+
+/* List rows */
+.list-row {
+  display: flex;
+  align-items: center;
+  padding: 13px 20px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.list-row:last-child { border-bottom: none; }
+.list-row:hover { background: var(--bg-hover); }
+
+/* ════════════════════════════════════════════════════════════
+   7. PIPELINE  — animated stage nodes + flowing particles
+════════════════════════════════════════════════════════════ */
+
+.pipeline-flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 8px 0 4px;
+  overflow-x: auto;
+}
+
+/* ── Stage node ── */
+.stg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 108px;
+}
+
+.stg-box {
+  width: 92px;
+  padding: 10px 8px 8px;
+  border-radius: 10px;
+  background: var(--bg-panel-2);
+  border: 1.5px solid var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  overflow: hidden;
+}
+
+.stg-box:hover { border-color: var(--accent); }
+
+/* ── States ── */
+.stg.st-done .stg-box {
+  border-color: var(--success);
+  background: var(--success-sub);
+}
+
+@keyframes stg-glow {
+  0%,100% { box-shadow: 0 0 0 1px rgba(10,132,255,0.20), 0 0 16px rgba(10,132,255,0.12); }
+  50%     { box-shadow: 0 0 0 1px rgba(10,132,255,0.38), 0 0 28px rgba(10,132,255,0.22); }
+}
+
+[data-theme="light"] .stg.st-active .stg-box {
+  box-shadow: 0 0 0 1px rgba(0,122,255,0.25), 0 0 14px rgba(0,122,255,0.14);
+  animation: stg-glow-light 2.4s ease-in-out infinite;
+}
+@keyframes stg-glow-light {
+  0%,100% { box-shadow: 0 0 0 1px rgba(0,122,255,0.18), 0 0 10px rgba(0,122,255,0.10); }
+  50%     { box-shadow: 0 0 0 1px rgba(0,122,255,0.32), 0 0 18px rgba(0,122,255,0.18); }
+}
+
+@keyframes stg-glow-warn {
+  0%,100% { box-shadow: 0 0 0 1px rgba(255,159,10,0.22), 0 0 16px rgba(255,159,10,0.12); }
+  50%     { box-shadow: 0 0 0 1px rgba(255,159,10,0.40), 0 0 26px rgba(255,159,10,0.22); }
+}
+
+.stg.st-active .stg-box {
+  border-color: var(--accent);
+  background: var(--accent-sub);
+  animation: stg-glow 2.4s ease-in-out infinite;
+}
+
+.stg.st-pending .stg-box { opacity: 0.45; }
+.stg.st-parallel .stg-box { border-color: var(--purple); background: var(--purple-sub); }
+
+/* ── Scan line on active ── */
+@keyframes stg-scan {
+  0%   { top: 0%;  opacity: 0.9; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.stg.st-active .stg-box::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: stg-scan 2s linear infinite;
+  top: 0;
+}
+
+/* ── Top accent bar ── */
+.stg-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2.5px;
+  border-radius: 10px 10px 0 0;
+}
+.stg.st-done     .stg-bar { background: linear-gradient(90deg, transparent, var(--success), transparent); }
+.stg.st-active   .stg-bar { background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+.stg.st-parallel .stg-bar { background: linear-gradient(90deg, transparent, var(--purple), transparent); }
+
+/* ── Icon ── */
+.stg-icon { font-size: 18px; line-height: 1; }
+
+/* ── Name ── */
+.stg-name {
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.3px;
+  color: var(--text-3);
+  font-family: -apple-system, sans-serif;
+  text-transform: uppercase;
+}
+.stg.st-done     .stg-name { color: var(--success); }
+.stg.st-active   .stg-name { color: var(--accent); }
+.stg.st-parallel .stg-name { color: var(--purple); }
+
+/* ── Sub status ── */
+.stg-status {
+  font-size: 9px;
+  font-family: "SF Mono", Menlo, monospace;
+  color: var(--text-3);
+  text-align: center;
+}
+.stg.st-done     .stg-status { color: var(--success); opacity: 0.8; }
+.stg.st-active   .stg-status { color: var(--accent); opacity: 0.9; }
+.stg.st-parallel .stg-status { color: var(--purple); opacity: 0.8; }
+
+/* ── Parallel dots ── */
+.stg-pdots { display: flex; gap: 4px; margin-top: 2px; }
+.stg-pdot  { width: 7px; height: 7px; border-radius: 50%; }
+
+/* ── Connector ── */
+.pipe-conn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 3px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pipe-conn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  height: 1.5px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--border-strong);
+}
+
+.pipe-conn.lit::before {
+  background: linear-gradient(90deg, var(--success), var(--accent));
+}
+
+.pipe-conn-arrow {
+  position: absolute;
+  right: -1px;
+  border-left: 6px solid var(--border-strong);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.pipe-conn.lit .pipe-conn-arrow { border-left-color: var(--accent); }
+
+/* ── Flowing dot ── */
+@keyframes flow-particle {
+  0%   { left: 0;           opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { left: calc(100% - 6px); opacity: 0; }
+}
+
+.pipe-dot {
+  position: absolute;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent), 0 0 3px var(--accent);
+  top: 50%;
+  transform: translateY(-50%);
+  animation: flow-particle 1.6s linear infinite;
+}
+
+.pipe-dot.d2 { animation-delay: 0.8s; }
+
+/* Light theme tones down the glow */
+[data-theme="light"] .pipe-dot {
+  box-shadow: 0 0 4px var(--accent);
+}
+
+/* ════════════════════════════════════════════════════════════
+   8. AGENT CARDS
+════════════════════════════════════════════════════════════ */
+
+.agent-tile {
+  background: var(--bg-panel);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+.agent-tile:hover {
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+}
+
+@keyframes agent-breath {
+  0%,100% { box-shadow: 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 0 8px var(--warning-sub); }
+}
+
+.agent-tile.working { animation: agent-breath 2.5s ease infinite; }
+
+.agent-av {
+  width: 64px; height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Subtle shine overlay */
+.agent-av::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(145deg, rgba(255,255,255,0.18) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.av-commander { background: linear-gradient(140deg, #4A47C4, #BF5AF2); }
+.av-product   { background: linear-gradient(140deg, #0057B8, #0A84FF); }
+.av-ux        { background: linear-gradient(140deg, #B8004A, #FF375F); }
+.av-arch      { background: linear-gradient(140deg, #1B7A40, #30D158); }
+.av-dev       { background: linear-gradient(140deg, #007899, #64D2FF); }
+.av-review    { background: linear-gradient(140deg, #B86000, #FF9F0A); }
+.av-test      { background: linear-gradient(140deg, #9A8000, #FFD60A); }
+.av-deploy    { background: linear-gradient(140deg, #3A3A3C, #98989D); }
+
+.agent-name   { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.agent-role   { font-size: 11px; color: var(--text-2); line-height: 1.4; }
+
+/* ════════════════════════════════════════════════════════════
+   9. ACTION ITEMS ("需要你处理")
+════════════════════════════════════════════════════════════ */
+
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 18px;
+  background: var(--bg-panel);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.action-item:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+.action-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.ai-orange { background: var(--warning-sub); }
+.ai-red    { background: var(--danger-sub); }
+.ai-blue   { background: var(--accent-sub); }
+
+.action-content { flex: 1; min-width: 0; }
+.action-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.action-meta { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.action-btns { display: flex; gap: 7px; flex-shrink: 0; }
+
+/* ════════════════════════════════════════════════════════════
+   10. APPROVAL CARD
+════════════════════════════════════════════════════════════ */
+
+.approval-card {
+  background: var(--bg-panel);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.approval-hdr {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.approval-hdr-title { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; color: var(--text-1); }
+.approval-hdr-sub   { font-size: 13px; color: var(--text-2); margin-top: 3px; }
+
+.approval-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+.ctx-block {
+  background: var(--bg-panel-2);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.ctx-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.ctx-content { font-size: 13px; color: var(--text-1); line-height: 1.6; }
+
+.approval-rec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--purple-sub);
+  border: 1px solid rgba(191,90,242,0.15);
+  border-radius: 10px;
+  padding: 11px 14px;
+}
+.rec-icon { font-size: 18px; flex-shrink: 0; }
+.rec-text { font-size: 13px; color: var(--text-1); line-height: 1.5; }
+
+.approval-ftr {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-panel-2);
+}
+
+/* ════════════════════════════════════════════════════════════
+   11. PROGRESS
+════════════════════════════════════════════════════════════ */
+
+.prog-wrap { display: flex; flex-direction: column; gap: 6px; }
+.prog-hdr  { display: flex; align-items: center; justify-content: space-between; }
+.prog-label { font-size: 13px; font-weight: 500; color: var(--text-1); }
+.prog-val   { font-size: 12px; color: var(--text-2); }
+
+.prog-track {
+  height: 6px;
+  background: var(--bg-panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.prog-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+.pf-blue   { background: var(--accent); }
+.pf-green  { background: var(--success); }
+.pf-orange { background: var(--warning); }
+.pf-cyan   { background: var(--cyan); }
+.pf-multi  { background: linear-gradient(90deg, var(--success) 60%, var(--warning) 60% 85%, var(--danger) 85%); }
+
+/* ════════════════════════════════════════════════════════════
+   MISC
+════════════════════════════════════════════════════════════ */
+
+.mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+.text-1 { color: var(--text-1); }
+.text-2 { color: var(--text-2); }
+.text-3 { color: var(--text-3); }
+
+.highlight-block {
+  background: var(--accent-sub);
+  border: 1px solid rgba(0,122,255,0.15);
+  border-radius: 10px;
+  padding: 13px 16px;
+  font-size: 13px;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+
+[data-theme="dark"] .highlight-block {
+  background: rgba(10,132,255,0.10);
+  border-color: rgba(10,132,255,0.20);
+}
+
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header class="page-header">
+  <div class="brand">
+    <div class="brand-name">AI-DZHT · Design System</div>
+    <div class="brand-sub">v2.0 · Premium · Dual Theme</div>
+  </div>
+
+  <div class="seg-ctrl" id="theme-ctrl">
+    <button class="seg-btn" id="btn-light" onclick="setTheme('light')">
+      <!-- sun icon -->
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="10" cy="10" r="4"/>
+        <line x1="10" y1="1.5" x2="10" y2="3.5"/>
+        <line x1="10" y1="16.5" x2="10" y2="18.5"/>
+        <line x1="3.04" y1="3.04" x2="4.46" y2="4.46"/>
+        <line x1="15.54" y1="15.54" x2="16.96" y2="16.96"/>
+        <line x1="1.5" y1="10" x2="3.5" y2="10"/>
+        <line x1="16.5" y1="10" x2="18.5" y2="10"/>
+        <line x1="3.04" y1="16.96" x2="4.46" y2="15.54"/>
+        <line x1="15.54" y1="4.46" x2="16.96" y2="3.04"/>
+      </svg>
+      亮色
+    </button>
+    <button class="seg-btn active" id="btn-dark" onclick="setTheme('dark')">
+      <!-- moon icon -->
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path d="M17.5 11.5A7.5 7.5 0 1 1 8.5 2.5a5.5 5.5 0 0 0 9 9z"/>
+      </svg>
+      暗色
+    </button>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- ══════════════════════════════════
+       §1  COLOR SYSTEM
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">01 · Color</div>
+    <div class="section-title">颜色系统</div>
+    <div class="section-desc">基于 Apple System Color 理念，每个颜色在亮色与暗色模式下独立调优，确保对比度与情感一致。切换右上角主题可以实时预览差异。</div>
+
+    <!-- Background tokens table -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-hdr-title">背景 & 边框 Token</span></div>
+      <div class="token-row">
+        <span class="token-key">--bg-base</span>
+        <span class="token-val">
+          <span id="v-base" class="mono"></span>
+          <span class="token-chip" style="background:var(--bg-base);"></span>
+        </span>
+      </div>
+      <div class="token-row">
+        <span class="token-key">--bg-panel</span>
+        <span class="token-val">
+          <span id="v-panel" class="mono"></span>
+          <span class="token-chip" style="background:var(--bg-panel);"></span>
+        </span>
+      </div>
+      <div class="token-row">
+        <span class="token-key">--bg-panel-2</span>
+        <span class="token-val">
+          <span id="v-panel2" class="mono"></span>
+          <span class="token-chip" style="background:var(--bg-panel-2);"></span>
+        </span>
+      </div>
+      <div class="token-row">
+        <span class="token-key">--border</span>
+        <span class="token-val">
+          <span class="mono">rgba adaptive</span>
+          <span class="token-chip" style="background:var(--border-strong);"></span>
+        </span>
+      </div>
+      <div class="token-row">
+        <span class="token-key">--text-1 / 2 / 3</span>
+        <span class="token-val" style="gap:4px;">
+          <span style="font-size:13px;color:var(--text-1);font-weight:600;">Primary</span>
+          <span style="font-size:13px;color:var(--text-2);">Secondary</span>
+          <span style="font-size:13px;color:var(--text-3);">Tertiary</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Semantic colors -->
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-block" style="background:var(--blue);">
+          <span class="swatch-block-label">Blue</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">Accent · Action</div><div class="swatch-token">--blue / --accent</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-block" style="background:var(--green);">
+          <span class="swatch-block-label">Green</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">Success · Done</div><div class="swatch-token">--green / --success</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-block" style="background:var(--orange);">
+          <span class="swatch-block-label">Orange</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">Warning · Running</div><div class="swatch-token">--orange / --warning</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-block" style="background:var(--red);">
+          <span class="swatch-block-label">Red</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">Danger · Error</div><div class="swatch-token">--red / --danger</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-block" style="background:linear-gradient(135deg,var(--indigo),var(--purple));">
+          <span class="swatch-block-label">Indigo→Purple</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">Commander · Special</div><div class="swatch-token">--indigo / --purple</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-block" style="background:var(--cyan);">
+          <span class="swatch-block-label">Cyan</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">Dev Agent · Token</div><div class="swatch-token">--cyan</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-block" style="background:var(--pink);">
+          <span class="swatch-block-label">Pink</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">UX Agent</div><div class="swatch-token">--pink</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-block" style="background:var(--yellow);">
+          <span class="swatch-block-label" style="color:rgba(0,0,0,0.7);text-shadow:none;">Yellow</span>
+        </div>
+        <div class="swatch-info"><div class="swatch-name">Test Agent</div><div class="swatch-token">--yellow</div></div>
+      </div>
+    </div>
+
+    <!-- Agent identity -->
+    <div style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-3);padding-left:2px;">Agent 颜色身份</div>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#4A47C4,#BF5AF2);"><span class="swatch-block-label">指挥官</span></div><div class="swatch-info"><div class="swatch-name">Commander</div><div class="swatch-token">indigo→purple</div></div></div>
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#0057B8,var(--blue));"><span class="swatch-block-label">产品</span></div><div class="swatch-info"><div class="swatch-name">Product</div><div class="swatch-token">blue</div></div></div>
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#B8004A,var(--pink));"><span class="swatch-block-label">UX</span></div><div class="swatch-info"><div class="swatch-name">UX Agent</div><div class="swatch-token">pink</div></div></div>
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#1B7A40,var(--green));"><span class="swatch-block-label">架构</span></div><div class="swatch-info"><div class="swatch-name">Architecture</div><div class="swatch-token">green</div></div></div>
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#007899,var(--cyan));"><span class="swatch-block-label">研发</span></div><div class="swatch-info"><div class="swatch-name">Dev</div><div class="swatch-token">cyan</div></div></div>
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#B86000,var(--orange));"><span class="swatch-block-label">审查</span></div><div class="swatch-info"><div class="swatch-name">Review</div><div class="swatch-token">orange</div></div></div>
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#9A8000,var(--yellow));"><span class="swatch-block-label" style="color:rgba(0,0,0,0.65);text-shadow:none;">测试</span></div><div class="swatch-info"><div class="swatch-name">Test</div><div class="swatch-token">yellow</div></div></div>
+      <div class="swatch"><div class="swatch-block" style="background:linear-gradient(140deg,#3A3A3C,#98989D);"><span class="swatch-block-label">部署</span></div><div class="swatch-info"><div class="swatch-name">Deploy</div><div class="swatch-token">gray</div></div></div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §2  TYPOGRAPHY
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">02 · Typography</div>
+    <div class="section-title">字体系统</div>
+    <div class="section-desc">SF Pro Display / Text · 系统字体栈 · 精确的字重、行高与字间距。</div>
+
+    <div class="panel">
+      <div class="type-row">
+        <div class="type-meta">DISPLAY · 34px · weight 700 · tracking -0.8px</div>
+        <div style="font-size:34px;font-weight:700;letter-spacing:-0.8px;">AI 研发指挥台</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">TITLE 1 · 28px · weight 700 · tracking -0.6px</div>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-0.6px;">需求管理大盘</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">TITLE 2 · 22px · weight 700 · tracking -0.4px</div>
+        <div style="font-size:22px;font-weight:700;letter-spacing:-0.4px;">用户认证模块重构</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">HEADLINE · 17px · weight 600 · tracking -0.2px</div>
+        <div style="font-size:17px;font-weight:600;letter-spacing:-0.2px;">当前流水线阶段：架构评审</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">BODY · 15px · weight 400 · lh 1.6</div>
+        <div style="font-size:15px;line-height:1.6;color:var(--text-1);">指挥官已完成需求解析，生成了 12 个 Story，建议按 Epic 分为 3 个 Sprint 执行。每个 Sprint 预计消耗 8,000–12,000 tokens。</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">FOOTNOTE · 13px · weight 400 · color text-2</div>
+        <div style="font-size:13px;color:var(--text-2);">上次更新：2 分钟前 · 消耗 2,340 tokens · 架构 Agent 正在工作</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">CAPTION · 11px · weight 600 · uppercase · tracking 0.8px</div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-3);">需求状态 · 进行中</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">MONO · 13px · SF Mono · color text-2</div>
+        <div style="font-size:13px;font-family:'SF Mono',Menlo,monospace;color:var(--text-2);">tokens_used: 14,820 / 32,000 · speed: 142 t/s · latency: 340ms</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §3  CONTROLS
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">03 · Controls</div>
+    <div class="section-title">按钮 & 输入</div>
+
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-hdr-title">按钮变体</span></div>
+      <div class="panel-body">
+        <div class="flex-col" style="gap:14px;">
+
+          <div class="flex-row">
+            <button class="btn btn-primary">确认启动流水线</button>
+            <button class="btn btn-secondary">取消</button>
+            <button class="btn btn-tint">查看详情</button>
+            <button class="btn btn-danger">终止执行</button>
+            <button class="btn btn-success">通过审批</button>
+            <button class="btn btn-warn">需要修改</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="flex-row">
+            <button class="btn btn-cmd">⌘ 指挥官模式</button>
+            <button class="btn btn-ghost">了解更多</button>
+            <button class="btn btn-icon" title="设置">⚙️</button>
+            <button class="btn btn-icon" title="通知">🔔</button>
+            <button class="btn btn-icon" title="搜索">🔍</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="flex-row" style="align-items:center;">
+            <button class="btn btn-sm btn-primary">小号</button>
+            <button class="btn btn-primary">默认</button>
+            <button class="btn btn-lg btn-primary">大号</button>
+            <button class="btn btn-xl btn-primary">超大</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="flex-row">
+            <button class="btn btn-primary" disabled>禁用状态</button>
+            <button class="btn btn-primary" style="pointer-events:none;">
+              <span class="spinner"></span> 执行中…
+            </button>
+            <button class="btn btn-secondary" style="pointer-events:none;">
+              <span class="spinner"></span> 加载中…
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-hdr-title">输入框</span></div>
+      <div class="panel-body">
+        <div class="grid-2" style="gap:20px;margin-bottom:20px;">
+          <div class="input-group">
+            <label class="input-label">需求标题</label>
+            <input class="input" type="text" placeholder="输入需求标题…">
+            <span class="input-hint">最多 100 个字符</span>
+          </div>
+          <div class="input-group">
+            <label class="input-label">PRD 文件路径</label>
+            <input class="input has-error" type="text" value="docs/prd-undefined.md">
+            <span class="input-err-msg">⚠ 文件不存在，请检查路径</span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Commander 指令输入</label>
+          <div class="cmd-wrap">
+            <div class="cmd-top">
+              <div class="cmd-avatar">⚡</div>
+              <input class="cmd-field" type="text" placeholder="告诉指挥官你想做什么…">
+            </div>
+            <div class="cmd-bottom">
+              <div class="cmd-ctx">
+                上下文：
+                <span class="cmd-ctx-tag">用户认证模块</span>
+                <span class="cmd-ctx-tag">架构评审阶段</span>
+              </div>
+              <div class="cmd-shortcut">
+                <span class="kbd">⌘</span><span class="kbd">K</span> 呼出
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §4  STATUS & BADGES
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">04 · Status</div>
+    <div class="section-title">状态徽章</div>
+
+    <div class="panel">
+      <div class="panel-body">
+        <div class="flex-row" style="margin-bottom:16px;">
+          <span class="badge b-blue badge-anim"><span class="badge-dot"></span>执行中</span>
+          <span class="badge b-green"><span class="badge-dot"></span>已完成</span>
+          <span class="badge b-orange badge-anim"><span class="badge-dot"></span>运行中</span>
+          <span class="badge b-red"><span class="badge-dot"></span>出错</span>
+          <span class="badge b-gray"><span class="badge-dot"></span>等待中</span>
+          <span class="badge b-purple"><span class="badge-dot"></span>指挥官</span>
+        </div>
+
+        <div class="divider" style="margin-bottom:16px;"></div>
+
+        <!-- GitHub-style status icons -->
+        <div class="flex-row" style="flex-wrap:wrap;gap:14px;">
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;">
+            <span class="si si-done">✓</span>需求分析
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;">
+            <span class="si si-done">✓</span>架构设计
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;">
+            <span class="si si-run">●</span>开发实现
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;">
+            <span class="si si-wait">⟳</span>测试验证
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;">
+            <span class="si si-idle">—</span>部署上线
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;">
+            <span class="si si-err">✗</span>构建失败
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §5  CARDS
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">05 · Cards</div>
+    <div class="section-title">卡片 & 面板</div>
+
+    <div class="grid-2">
+      <!-- Active requirement card -->
+      <div class="card card-blue card-body">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="card-title">用户认证模块重构</div>
+          <span class="badge b-blue badge-anim"><span class="badge-dot"></span>进行中</span>
+        </div>
+        <div class="card-subtitle">Sprint 3 · 已进行 5 天 · 架构阶段</div>
+        <div style="margin-top:14px;">
+          <div class="prog-hdr" style="margin-bottom:5px;">
+            <span style="font-size:12px;font-weight:500;color:var(--text-1);">总进度</span>
+            <span style="font-size:12px;color:var(--text-2);">62%</span>
+          </div>
+          <div class="prog-track"><div class="prog-fill pf-blue" style="width:62%;"></div></div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:14px;">
+          <div>
+            <div style="font-size:17px;font-weight:700;color:var(--text-1);" id="tok-main">14,820</div>
+            <div style="font-size:11px;color:var(--text-2);">tokens 已用</div>
+          </div>
+          <div>
+            <div style="font-size:17px;font-weight:700;color:var(--text-1);">3h 12m</div>
+            <div style="font-size:11px;color:var(--text-2);">运行时长</div>
+          </div>
+          <div>
+            <div style="font-size:17px;font-weight:700;color:var(--text-1);">3</div>
+            <div style="font-size:11px;color:var(--text-2);">并行 Story</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Completed card -->
+      <div class="card card-green card-body">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="card-title">支付流程优化</div>
+          <span class="badge b-green"><span class="badge-dot"></span>已完成</span>
+        </div>
+        <div class="card-subtitle">Sprint 2 · 历时 8 天 · 已上线</div>
+        <div style="margin-top:14px;display:flex;gap:18px;">
+          <div style="text-align:center;">
+            <div class="card-stat" style="color:var(--success);">14,820</div>
+            <div style="font-size:11px;color:var(--text-2);">Tokens</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="card-stat">4h 32m</div>
+            <div style="font-size:11px;color:var(--text-2);">总耗时</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="card-stat">98%</div>
+            <div style="font-size:11px;color:var(--text-2);">测试覆盖</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Approval pending -->
+      <div class="card card-orange card-body">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="card-title">⚑ 等待你的审批</div>
+          <span class="badge b-orange badge-anim"><span class="badge-dot"></span>需要处理</span>
+        </div>
+        <div class="card-subtitle">架构方案 · 微服务拆分策略确认</div>
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn btn-sm btn-success">通过</button>
+          <button class="btn btn-sm btn-danger">拒绝</button>
+          <button class="btn btn-sm btn-secondary">查看详情</button>
+        </div>
+      </div>
+
+      <!-- Error card -->
+      <div class="card card-red card-body">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="card-title">⚠ 测试阶段失败</div>
+          <span class="badge b-red"><span class="badge-dot"></span>需要介入</span>
+        </div>
+        <div class="card-subtitle">搜索服务重构 · 2 个用例超时</div>
+        <div style="margin-top:12px;background:var(--danger-sub);border-radius:8px;padding:9px 12px;font-size:12px;color:var(--text-1);line-height:1.5;">
+          UserAuthTest.testLoginTimeout 超时，影响 Story B-043 继续推进
+        </div>
+      </div>
+    </div>
+
+    <!-- Glass panel demo -->
+    <div class="panel-glass" style="padding:22px 28px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-3);margin-bottom:8px;">Glass Morphism Panel</div>
+      <div style="font-size:14px;color:var(--text-1);line-height:1.6;">毛玻璃效果面板，使用 <span class="mono" style="font-size:12px;color:var(--accent);">backdrop-filter: blur(24px)</span>。用于悬浮菜单、Commander 面板、Tooltip 等需要层次感的场景。亮色 / 暗色均有独立调优。</div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §6  AGENTS
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">06 · Agents</div>
+    <div class="section-title">Agent 视觉身份</div>
+    <div class="section-desc">渐变色图标卡片，适配双主题。工作状态带呼吸光晕动画，闲置态安静。需求详情页中将使用更精细的 SVG 全息角色图形。</div>
+
+    <div class="grid-4">
+      <div class="agent-tile working">
+        <div class="agent-av av-commander">⚡</div>
+        <div>
+          <div class="agent-name">指挥官</div>
+          <div class="agent-role">全局调度 · 人工节点</div>
+        </div>
+        <span class="badge b-orange badge-anim"><span class="badge-dot"></span>工作中</span>
+      </div>
+
+      <div class="agent-tile">
+        <div class="agent-av av-product">📋</div>
+        <div>
+          <div class="agent-name">产品 Agent</div>
+          <div class="agent-role">需求分析 · PRD</div>
+        </div>
+        <span class="badge b-green"><span class="badge-dot"></span>已完成</span>
+      </div>
+
+      <div class="agent-tile">
+        <div class="agent-av av-ux">🎨</div>
+        <div>
+          <div class="agent-name">UX Agent</div>
+          <div class="agent-role">交互设计 · 规格</div>
+        </div>
+        <span class="badge b-gray"><span class="badge-dot"></span>等待中</span>
+      </div>
+
+      <div class="agent-tile">
+        <div class="agent-av av-arch">🏗</div>
+        <div>
+          <div class="agent-name">架构 Agent</div>
+          <div class="agent-role">技术架构 · ADR</div>
+        </div>
+        <span class="badge b-green"><span class="badge-dot"></span>已完成</span>
+      </div>
+
+      <div class="agent-tile working">
+        <div class="agent-av av-dev">💻</div>
+        <div>
+          <div class="agent-name">研发 Agent ×3</div>
+          <div class="agent-role">Story 实现 · 单测</div>
+        </div>
+        <span class="badge b-orange badge-anim"><span class="badge-dot"></span>并行中</span>
+      </div>
+
+      <div class="agent-tile">
+        <div class="agent-av av-review">🔍</div>
+        <div>
+          <div class="agent-name">审查 Agent</div>
+          <div class="agent-role">质量门 · 阶段验证</div>
+        </div>
+        <span class="badge b-gray"><span class="badge-dot"></span>等待中</span>
+      </div>
+
+      <div class="agent-tile">
+        <div class="agent-av av-test">🧪</div>
+        <div>
+          <div class="agent-name">测试 Agent</div>
+          <div class="agent-role">自动化测试 · 覆盖</div>
+        </div>
+        <span class="badge b-gray"><span class="badge-dot"></span>等待中</span>
+      </div>
+
+      <div class="agent-tile">
+        <div class="agent-av av-deploy">🚀</div>
+        <div>
+          <div class="agent-name">部署 Agent</div>
+          <div class="agent-role">CI/CD · 环境</div>
+        </div>
+        <span class="badge b-gray"><span class="badge-dot"></span>等待中</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §7  PIPELINE
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">07 · Pipeline</div>
+    <div class="section-title">流水线组件</div>
+    <div class="section-desc">节点 + 连接箭头 + 流动粒子。已完成节点绿色，活跃节点蓝色扫描线脉冲，粒子沿连接线流动，等待节点半透明。亮色 / 暗色均有独立校准。</div>
+
+    <!-- 示例1：5阶段，当前在"开发实现" -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-hdr-title">用户认证模块重构 · 流水线视图</span>
+        <span style="font-size:12px;color:var(--text-2);">阶段 3/5 · 预计剩余 2h 15m</span>
+      </div>
+      <div style="padding:28px 32px;">
+
+        <!-- Pipeline row -->
+        <div class="pipeline-flow">
+
+          <!-- Stage 1: done -->
+          <div class="stg st-done">
+            <div class="stg-box">
+              <div class="stg-bar"></div>
+              <div class="stg-icon">📋</div>
+              <div class="stg-name">需求分析</div>
+              <div class="stg-status">✓ 完成</div>
+            </div>
+          </div>
+
+          <!-- Connector 1→2 (lit) -->
+          <div class="pipe-conn lit">
+            <div class="pipe-conn-arrow"></div>
+            <div class="pipe-dot"></div>
+          </div>
+
+          <!-- Stage 2: done -->
+          <div class="stg st-done">
+            <div class="stg-box">
+              <div class="stg-bar"></div>
+              <div class="stg-icon">🏗</div>
+              <div class="stg-name">架构设计</div>
+              <div class="stg-status">✓ 通过审批</div>
+            </div>
+          </div>
+
+          <!-- Connector 2→3 (lit) -->
+          <div class="pipe-conn lit">
+            <div class="pipe-conn-arrow"></div>
+            <div class="pipe-dot"></div>
+            <div class="pipe-dot d2"></div>
+          </div>
+
+          <!-- Stage 3: active + parallel -->
+          <div class="stg st-active">
+            <div class="stg-box">
+              <div class="stg-bar"></div>
+              <div class="stg-icon">💻</div>
+              <div class="stg-name">开发实现</div>
+              <div class="stg-status">3 Story 并行</div>
+              <div class="stg-pdots">
+                <div class="stg-pdot" style="background:var(--cyan);"></div>
+                <div class="stg-pdot" style="background:var(--cyan);opacity:0.7;"></div>
+                <div class="stg-pdot" style="background:var(--cyan);opacity:0.45;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Connector 3→4 (dim) -->
+          <div class="pipe-conn">
+            <div class="pipe-conn-arrow"></div>
+          </div>
+
+          <!-- Stage 4: pending -->
+          <div class="stg st-pending">
+            <div class="stg-box">
+              <div class="stg-icon">🧪</div>
+              <div class="stg-name">测试验证</div>
+              <div class="stg-status">待开始</div>
+            </div>
+          </div>
+
+          <!-- Connector 4→5 (dim) -->
+          <div class="pipe-conn">
+            <div class="pipe-conn-arrow"></div>
+          </div>
+
+          <!-- Stage 5: pending -->
+          <div class="stg st-pending">
+            <div class="stg-box">
+              <div class="stg-icon">🚀</div>
+              <div class="stg-name">部署上线</div>
+              <div class="stg-status">待开始</div>
+            </div>
+          </div>
+
+        </div><!-- /pipeline-flow -->
+
+        <!-- Current stage detail bar -->
+        <div style="margin-top:24px;background:var(--bg-panel-2);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:14px;border:1px solid var(--border);">
+          <div class="agent-av av-dev" style="width:44px;height:44px;border-radius:12px;font-size:18px;flex-shrink:0;">💻</div>
+          <div style="flex:1;">
+            <div style="font-size:14px;font-weight:600;color:var(--text-1);">研发 Agent × 3 实例并行工作中</div>
+            <div style="font-size:12px;color:var(--text-2);margin-top:3px;">Story B-041: 登录模块 · B-042: 权限系统 · B-043: Session 管理</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:20px;font-weight:700;color:var(--warning);font-variant-numeric:tabular-nums;" id="tok-pipe">14,820</div>
+            <div style="font-size:11px;color:var(--text-2);">tokens 已用</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 示例2：带审批节点 -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-hdr-title">支付流程优化 · 等待审批</span>
+        <span class="badge b-orange badge-anim"><span class="badge-dot"></span>需要处理</span>
+      </div>
+      <div style="padding:24px 32px;">
+        <div class="pipeline-flow">
+
+          <div class="stg st-done">
+            <div class="stg-box">
+              <div class="stg-bar"></div>
+              <div class="stg-icon">📋</div>
+              <div class="stg-name">需求分析</div>
+              <div class="stg-status">✓ 完成</div>
+            </div>
+          </div>
+
+          <div class="pipe-conn lit">
+            <div class="pipe-conn-arrow"></div>
+            <div class="pipe-dot"></div>
+          </div>
+
+          <div class="stg st-done">
+            <div class="stg-box">
+              <div class="stg-bar"></div>
+              <div class="stg-icon">🏗</div>
+              <div class="stg-name">架构设计</div>
+              <div class="stg-status">✓ 完成</div>
+            </div>
+          </div>
+
+          <div class="pipe-conn lit">
+            <div class="pipe-conn-arrow"></div>
+            <div class="pipe-dot"></div>
+          </div>
+
+          <!-- Approval gate — uses warning/orange palette -->
+          <div class="stg" style="min-width:108px;">
+            <div class="stg-box" style="border-color:var(--orange);background:var(--warning-sub);animation:stg-glow-warn 2.4s ease-in-out infinite;overflow:hidden;">
+              <div class="stg-bar" style="background:linear-gradient(90deg,transparent,var(--orange),transparent);"></div>
+              <div class="stg-icon">⚑</div>
+              <div class="stg-name" style="color:var(--orange);">等待审批</div>
+              <div class="stg-status" style="color:var(--orange);opacity:0.9;">架构方案确认</div>
+            </div>
+          </div>
+
+          <div class="pipe-conn">
+            <div class="pipe-conn-arrow"></div>
+          </div>
+
+          <div class="stg st-pending">
+            <div class="stg-box">
+              <div class="stg-icon">💻</div>
+              <div class="stg-name">开发实现</div>
+              <div class="stg-status">待审批通过</div>
+            </div>
+          </div>
+
+          <div class="pipe-conn">
+            <div class="pipe-conn-arrow"></div>
+          </div>
+
+          <div class="stg st-pending">
+            <div class="stg-box">
+              <div class="stg-icon">🚀</div>
+              <div class="stg-name">部署上线</div>
+              <div class="stg-status">待开始</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §8  ACTION LIST
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">08 · Action List</div>
+    <div class="section-title">需要你处理</div>
+    <div class="section-desc">始终置顶，按优先级排序。每条均可直接操作，无需跳转。</div>
+
+    <div class="flex-col" style="gap:8px;">
+      <div class="action-item">
+        <div class="action-icon ai-orange">⚑</div>
+        <div class="action-content">
+          <div class="action-title">架构方案审批 · 用户认证模块</div>
+          <div class="action-meta">架构 Agent 完成技术方案，需要确认微服务拆分策略 · 12 分钟前</div>
+        </div>
+        <div class="action-btns">
+          <button class="btn btn-sm btn-success">通过</button>
+          <button class="btn btn-sm btn-secondary">查看</button>
+        </div>
+      </div>
+
+      <div class="action-item">
+        <div class="action-icon ai-red">⚠</div>
+        <div class="action-content">
+          <div class="action-title">测试失败需要介入 · 搜索服务重构</div>
+          <div class="action-meta">2 个测试用例超时，影响 Sprint 3 进度 · 35 分钟前</div>
+        </div>
+        <div class="action-btns">
+          <button class="btn btn-sm btn-warn">处理</button>
+          <button class="btn btn-sm btn-secondary">详情</button>
+        </div>
+      </div>
+
+      <div class="action-item">
+        <div class="action-icon ai-blue">📋</div>
+        <div class="action-content">
+          <div class="action-title">新 PRD 待配置流水线 · 消息推送服务</div>
+          <div class="action-meta">产品 Agent 解析完成，建议 4 阶段流水线 · 1 小时前</div>
+        </div>
+        <div class="action-btns">
+          <button class="btn btn-sm btn-tint">配置</button>
+          <button class="btn btn-sm btn-secondary">查看</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §9  APPROVAL CARD
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">09 · Approval</div>
+    <div class="section-title">审批卡 · 决策上下文</div>
+    <div class="section-desc">30 秒内做出有底气的判断。信息结构：做了什么 → 关键产出 → 风险 → 影响 → 指挥官建议 → 操作。</div>
+
+    <div class="approval-card">
+      <div class="approval-hdr">
+        <div>
+          <div class="approval-hdr-title">架构方案审批</div>
+          <div class="approval-hdr-sub">用户认证模块重构 · Story B-041~043</div>
+        </div>
+        <span class="badge b-orange badge-anim"><span class="badge-dot"></span>需要你处理</span>
+      </div>
+
+      <div class="approval-body">
+        <div class="grid-2">
+          <div class="ctx-block">
+            <div class="ctx-label">架构 Agent 做了什么</div>
+            <div class="ctx-content">分析现有单体认证服务，提出拆分为 Auth Service + Session Service 两个微服务。生成 ADR-003，评估了 3 种方案利弊。</div>
+          </div>
+          <div class="ctx-block">
+            <div class="ctx-label">关键产出</div>
+            <div class="ctx-content" style="display:flex;flex-direction:column;gap:5px;">
+              <div style="display:flex;align-items:center;gap:7px;"><span class="si si-done" style="width:15px;height:15px;font-size:8px;flex-shrink:0;">✓</span>ADR-003 架构决策记录</div>
+              <div style="display:flex;align-items:center;gap:7px;"><span class="si si-done" style="width:15px;height:15px;font-size:8px;flex-shrink:0;">✓</span>系统时序图（3 张）</div>
+              <div style="display:flex;align-items:center;gap:7px;"><span class="si si-done" style="width:15px;height:15px;font-size:8px;flex-shrink:0;">✓</span>接口定义草案</div>
+            </div>
+          </div>
+          <div class="ctx-block">
+            <div class="ctx-label">审查 Agent 发现的风险</div>
+            <div class="ctx-content" style="color:var(--warning);">中等风险：微服务间通信引入网络延迟，需确认 SLA (&lt;50ms) 是否可接受。</div>
+          </div>
+          <div class="ctx-block">
+            <div class="ctx-label">通过后的影响</div>
+            <div class="ctx-content">研发 Agent 立即开始并行实现 B-041~043，预计 2h 30m 完成。</div>
+          </div>
+        </div>
+
+        <div class="approval-rec">
+          <div class="rec-icon">⚡</div>
+          <div class="rec-text"><strong>指挥官建议：通过</strong> — 架构方案符合技术规范，延迟风险在可接受范围内，后续压测阶段验证 SLA。</div>
+        </div>
+      </div>
+
+      <div class="approval-ftr">
+        <div class="flex-row">
+          <button class="btn btn-success">✓ 通过审批</button>
+          <button class="btn btn-danger">✗ 拒绝</button>
+          <button class="btn btn-secondary">查看完整报告</button>
+        </div>
+        <span style="font-size:12px;color:var(--text-3);">12 分钟前请求 · 阻塞 3 个 Story</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       §10  PROGRESS
+  ══════════════════════════════════ -->
+  <div class="ds-section">
+    <div class="section-eyebrow">10 · Progress</div>
+    <div class="section-title">进度组件</div>
+
+    <div class="panel">
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:18px;">
+        <div class="prog-wrap">
+          <div class="prog-hdr">
+            <span class="prog-label">电商平台重构</span>
+            <span class="prog-val">8/12 需求完成 · 67%</span>
+          </div>
+          <div class="prog-track"><div class="prog-fill pf-blue" style="width:67%;"></div></div>
+        </div>
+        <div class="prog-wrap">
+          <div class="prog-hdr">
+            <span class="prog-label">用户认证模块</span>
+            <span class="prog-val">进行中 · 62%</span>
+          </div>
+          <div class="prog-track"><div class="prog-fill pf-orange" style="width:62%;"></div></div>
+        </div>
+        <div class="prog-wrap">
+          <div class="prog-hdr">
+            <span class="prog-label">Token 消耗</span>
+            <span class="prog-val mono" style="font-size:12px;" id="tok-prog-label">14,820 / 32,000</span>
+          </div>
+          <div class="prog-track"><div class="prog-fill pf-cyan" style="width:46%;" id="tok-prog-bar"></div></div>
+        </div>
+        <div class="prog-wrap">
+          <div class="prog-hdr">
+            <span class="prog-label">Sprint 综合进度</span>
+            <span class="prog-val">完成 60% · 进行 25% · 阻塞 15%</span>
+          </div>
+          <div class="prog-track" style="height:8px;"><div class="prog-fill pf-multi" style="width:100%;"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+/* Theme switching */
+function setTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('btn-light').classList.toggle('active', t === 'light');
+  document.getElementById('btn-dark').classList.toggle('active', t === 'dark');
+}
+
+/* Detect system preference on load */
+if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+  setTheme('light');
+}
+
+/* Live token counter animation */
+let tok = 14820;
+const els = [
+  document.getElementById('tok-main'),
+  document.getElementById('tok-pipe'),
+];
+setInterval(() => {
+  tok += Math.floor(Math.random() * 30 + 5);
+  const fmt = tok.toLocaleString('zh');
+  els.forEach(el => { if(el) el.textContent = fmt; });
+  // Update progress bar
+  const pct = Math.min((tok / 32000) * 100, 100);
+  const bar = document.getElementById('tok-prog-bar');
+  const lbl = document.getElementById('tok-prog-label');
+  if(bar) bar.style.width = pct.toFixed(1) + '%';
+  if(lbl) lbl.textContent = tok.toLocaleString('zh') + ' / 32,000';
+}, 900);
+</script>
+</body>
+</html>

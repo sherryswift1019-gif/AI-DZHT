@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-DZHT — 项目管理</title>
+<style>
+/* ══════════════════════ BASE ══════════════════════ */
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #0d1117; color: #e6edf3;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+
+/* ══════════════════════ TOP NAV ══════════════════════ */
+.topnav {
+  height: 52px; background: #161b22;
+  border-bottom: 1px solid #30363d;
+  display: flex; align-items: center;
+  padding: 0 24px; gap: 0; flex-shrink: 0; position: sticky; top: 0; z-index: 50;
+}
+.logo { font-size: 17px; font-weight: 700; color: #58a6ff; letter-spacing: 1px; margin-right: 32px; white-space: nowrap; }
+.logo em { color: #3fb950; font-style: normal; }
+.nav-links { display: flex; gap: 2px; }
+.navlink {
+  padding: 6px 14px; border-radius: 6px; font-size: 13px;
+  cursor: pointer; color: #8b949e; transition: all .15s; white-space: nowrap;
+}
+.navlink:hover { color: #e6edf3; background: #21262d; }
+.navlink.active { color: #e6edf3; background: #21262d; }
+.nav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.user-badge {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: #2d1f5e; border: 1px solid #8957e5; color: #d2a8ff; cursor: pointer;
+}
+.user-dot { width: 7px; height: 7px; border-radius: 50%; background: #8957e5; }
+
+/* ══════════════════════ PAGE HEADER ══════════════════════ */
+.page-header {
+  background: #161b22; border-bottom: 1px solid #30363d;
+  padding: 20px 24px 0; flex-shrink: 0;
+}
+.ph-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.ph-title { font-size: 22px; font-weight: 700; color: #e6edf3; }
+.ph-sub { font-size: 13px; color: #8b949e; margin-top: 4px; }
+.ph-actions { display: flex; gap: 8px; align-items: center; }
+
+.btn {
+  padding: 7px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
+  cursor: pointer; border: 1px solid; transition: all .15s; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn-primary:hover { background: #2ea043; }
+.btn-secondary { background: transparent; border-color: #30363d; color: #8b949e; }
+.btn-secondary:hover { background: #21262d; color: #e6edf3; }
+
+/* Platform stats bar */
+.stats-bar { display: flex; gap: 0; border-top: 1px solid #30363d; }
+.stat-tab {
+  padding: 12px 24px; display: flex; align-items: center; gap: 10px;
+  border-top: 2px solid transparent; cursor: pointer; transition: all .15s;
+}
+.stat-tab:hover { background: #1a1f27; }
+.stat-tab.active { border-top-color: #58a6ff; }
+.st-val { font-size: 20px; font-weight: 700; }
+.st-label { font-size: 11px; color: #8b949e; margin-top: 1px; }
+.st-divider { width: 1px; background: #30363d; margin: 10px 0; }
+
+/* ══════════════════════ MAIN CONTENT ══════════════════════ */
+.main-content { flex: 1; padding: 24px; }
+
+/* Toolbar */
+.toolbar {
+  display: flex; gap: 10px; align-items: center; margin-bottom: 20px;
+}
+.search-wrap { position: relative; }
+.search-input {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 7px 12px 7px 34px; font-size: 13px; color: #e6edf3; outline: none; width: 260px;
+}
+.search-input:focus { border-color: #58a6ff; }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #484f58; font-size: 14px; }
+
+.filter-group { display: flex; gap: 2px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 2px; }
+.filter-btn {
+  padding: 4px 12px; border-radius: 4px; font-size: 12px; color: #8b949e; cursor: pointer; transition: all .15s;
+}
+.filter-btn:hover { color: #e6edf3; }
+.filter-btn.on { background: #21262d; color: #e6edf3; }
+
+.view-toggle { display: flex; gap: 2px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 2px; margin-left: auto; }
+.vbtn { padding: 4px 10px; border-radius: 4px; font-size: 14px; cursor: pointer; color: #8b949e; transition: all .15s; }
+.vbtn:hover { color: #e6edf3; }
+.vbtn.on { background: #21262d; color: #e6edf3; }
+
+/* ══════════════════════ PROJECT GRID ══════════════════════ */
+.project-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px;
+}
+
+.project-card {
+  background: #161b22; border: 1.5px solid #30363d; border-radius: 10px;
+  padding: 0; overflow: hidden; cursor: pointer; transition: all .2s;
+  display: flex; flex-direction: column;
+}
+.project-card:hover { border-color: #58a6ff60; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.project-card.pinned { border-color: #1f6feb; }
+
+/* Card top color band */
+.card-band { height: 4px; }
+
+.card-body { padding: 16px 18px; flex: 1; }
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.card-title-row { display: flex; align-items: center; gap: 8px; }
+.card-icon { font-size: 18px; }
+.card-name { font-size: 15px; font-weight: 700; color: #e6edf3; }
+.card-id { font-size: 10px; color: #484f58; font-family: monospace; }
+.pin-icon { font-size: 12px; color: #1f6feb; }
+.status-badge {
+  padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600;
+  white-space: nowrap; flex-shrink: 0;
+}
+.sb-active   { background: #1a3d2b; border: 1px solid #3fb95050; color: #3fb950; }
+.sb-planning { background: #1f2d3d; border: 1px solid #1f6feb50; color: #79c0ff; }
+.sb-paused   { background: #3d2f1a; border: 1px solid #d2992250; color: #d29922; }
+.sb-done     { background: #21262d; border: 1px solid #30363d;   color: #8b949e; }
+
+.card-desc { font-size: 12px; color: #8b949e; line-height: 1.5; margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Requirement status mini-bars */
+.req-summary { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
+.req-bar-track { flex: 1; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; display: flex; }
+.req-seg { height: 100%; }
+.rs-done  { background: #3fb950; }
+.rs-run   { background: #58a6ff; }
+.rs-wait  { background: #d29922; }
+.rs-queue { background: #30363d; }
+.req-label { font-size: 11px; color: #8b949e; white-space: nowrap; }
+
+.req-counts { display: flex; gap: 12px; margin-bottom: 14px; }
+.rc-item { display: flex; flex-direction: column; align-items: center; }
+.rc-val { font-size: 16px; font-weight: 700; }
+.rc-label { font-size: 9px; color: #484f58; margin-top: 1px; text-align: center; }
+
+/* Card footer */
+.card-footer {
+  padding: 10px 18px; border-top: 1px solid #21262d;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.cf-meta { display: flex; gap: 14px; }
+.cf-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #8b949e; }
+.cf-icon { font-size: 12px; }
+
+.card-actions { display: flex; gap: 4px; }
+.card-action-btn {
+  padding: 4px 8px; border-radius: 5px; font-size: 11px; color: #8b949e;
+  cursor: pointer; border: 1px solid transparent; transition: all .15s;
+}
+.card-action-btn:hover { background: #21262d; color: #e6edf3; border-color: #30363d; }
+
+/* Active pipeline indicators */
+.active-pipes { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+.pipe-pill {
+  display: flex; align-items: center; gap: 4px;
+  background: #1f2d3d; border: 1px solid #1f6feb30; border-radius: 12px;
+  padding: 2px 8px; font-size: 10px; color: #79c0ff;
+}
+.pipe-dot { width: 5px; height: 5px; border-radius: 50%; background: #58a6ff; animation: blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.pipe-pill.warn { background: #3d2f1a; border-color: #d2992230; color: #d29922; }
+.pipe-pill.warn .pipe-dot { background: #d29922; }
+
+/* ══════════════════════ EMPTY CARD — NEW PROJECT ══════════════════════ */
+.new-project-card {
+  background: transparent; border: 1.5px dashed #30363d; border-radius: 10px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 40px; cursor: pointer; transition: all .2s; min-height: 240px;
+}
+.new-project-card:hover { border-color: #3fb950; background: #1a3d2b10; }
+.npc-icon { font-size: 32px; color: #30363d; }
+.new-project-card:hover .npc-icon { color: #3fb950; }
+.npc-text { font-size: 14px; color: #484f58; }
+.new-project-card:hover .npc-text { color: #3fb950; }
+
+/* ══════════════════════ MODAL — CREATE PROJECT ══════════════════════ */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 100;
+  display: none; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+  width: 580px; max-height: 88vh; overflow-y: auto;
+  animation: modalin .2s ease; display: flex; flex-direction: column;
+}
+@keyframes modalin { from{opacity:0;transform:scale(.96)} to{opacity:1;transform:scale(1)} }
+.modal-header {
+  padding: 20px 24px 14px; border-bottom: 1px solid #30363d;
+  display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+}
+.modal-title { font-size: 16px; font-weight: 700; color: #e6edf3; }
+.modal-close { color: #8b949e; cursor: pointer; font-size: 22px; line-height: 1; }
+.modal-close:hover { color: #e6edf3; }
+.modal-body { padding: 20px 24px; flex: 1; }
+.modal-footer { padding: 14px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+
+.form-row { margin-bottom: 18px; }
+.form-label { font-size: 12px; font-weight: 600; color: #c9d1d9; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.required { color: #f85149; }
+.form-input {
+  width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+  padding: 9px 12px; font-size: 13px; color: #e6edf3; outline: none;
+}
+.form-input:focus { border-color: #58a6ff; }
+textarea.form-input { resize: vertical; min-height: 80px; font-family: inherit; line-height: 1.5; }
+.form-hint { font-size: 11px; color: #8b949e; margin-top: 5px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* Color picker for project */
+.color-options { display: flex; gap: 8px; margin-top: 6px; }
+.color-opt {
+  width: 28px; height: 28px; border-radius: 6px; cursor: pointer;
+  border: 2px solid transparent; transition: all .15s;
+}
+.color-opt.selected { border-color: #fff; transform: scale(1.1); }
+.color-opt:hover { transform: scale(1.05); }
+
+/* ══════════════════════ DRAWER — PROJECT DETAIL (进入项目前的预览) ══════════════════════ */
+.drawer-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 80;
+  display: none;
+}
+.drawer-overlay.open { display: block; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 480px;
+  background: #161b22; border-left: 1px solid #30363d;
+  z-index: 81; display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform .25s ease;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-header {
+  padding: 18px 20px; border-bottom: 1px solid #30363d;
+  display: flex; justify-content: space-between; align-items: flex-start; flex-shrink: 0;
+}
+.drawer-title { font-size: 16px; font-weight: 700; color: #e6edf3; }
+.drawer-sub { font-size: 12px; color: #8b949e; margin-top: 3px; }
+.drawer-close { color: #8b949e; cursor: pointer; font-size: 20px; }
+.drawer-close:hover { color: #e6edf3; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 18px 20px; }
+.drawer-body::-webkit-scrollbar { width: 4px; }
+.drawer-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+.drawer-footer {
+  padding: 14px 20px; border-top: 1px solid #30363d;
+  display: flex; gap: 8px; flex-shrink: 0;
+}
+
+/* Requirement list inside drawer */
+.req-list { display: flex; flex-direction: column; gap: 8px; }
+.req-item {
+  background: #21262d; border: 1px solid #30363d; border-radius: 8px;
+  padding: 12px 14px; cursor: pointer; transition: all .15s;
+}
+.req-item:hover { border-color: #58a6ff50; background: #262c36; }
+.req-item-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+.req-id { font-size: 10px; color: #58a6ff; font-family: monospace; font-weight: 600; }
+.req-status-badge {
+  padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;
+}
+.rsb-run  { background: #1a3d2b; color: #3fb950; }
+.rsb-wait { background: #3d2f1a; color: #d29922; }
+.rsb-queue{ background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+.rsb-done { background: #1a3d1a; color: #56d364; }
+.rsb-draft{ background: #1f2d3d; color: #79c0ff; }
+.req-title { font-size: 13px; color: #c9d1d9; margin-bottom: 4px; }
+.req-meta { display: flex; gap: 10px; font-size: 10px; color: #484f58; }
+.req-pipeline { display: flex; gap: 3px; align-items: center; margin-top: 6px; }
+.rp-dot { width: 8px; height: 8px; border-radius: 50%; }
+.rp-done { background: #3fb950; }
+.rp-run  { background: #58a6ff; animation: blink 1.5s infinite; }
+.rp-wait { background: #d29922; }
+.rp-idle { background: #30363d; }
+.rp-line { flex: 1; height: 1px; background: #30363d; max-width: 14px; }
+
+/* Section title in drawer */
+.drawer-section { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .8px; margin: 16px 0 8px; display: flex; align-items: center; gap: 8px; }
+.drawer-section::after { content: ''; flex: 1; height: 1px; background: #21262d; }
+
+/* Priority badge */
+.pri-badge { padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 700; }
+.p-urgent { background: #3d1a1a; color: #f85149; }
+.p-high   { background: #3d2f1a; color: #d29922; }
+.p-normal { background: #1f2d3d; color: #58a6ff; }
+.p-low    { background: #21262d; color: #8b949e; }
+
+/* ══════════════════════ LIST VIEW ══════════════════════ */
+.project-table { width: 100%; border-collapse: collapse; display: none; }
+.pt-head th {
+  padding: 10px 14px; text-align: left;
+  font-size: 11px; font-weight: 600; color: #8b949e;
+  text-transform: uppercase; letter-spacing: .5px;
+  border-bottom: 1px solid #30363d; background: #161b22;
+}
+.pt-row {
+  border-bottom: 1px solid #21262d; cursor: pointer; transition: background .15s;
+}
+.pt-row:hover { background: #161b22; }
+.pt-row td { padding: 12px 14px; font-size: 13px; }
+.pt-name { font-weight: 600; color: #e6edf3; display: flex; align-items: center; gap: 8px; }
+.pt-id   { font-size: 11px; color: #484f58; font-family: monospace; }
+
+/* ══════════════════════ MISC ══════════════════════ */
+.text-green { color: #3fb950; }
+.text-blue  { color: #58a6ff; }
+.text-warn  { color: #d29922; }
+.text-err   { color: #f85149; }
+.text-muted { color: #8b949e; }
+
+select.form-input { cursor: pointer; appearance: none; }
+
+</style>
+</head>
+<body>
+
+<!-- ══ TOP NAV ══ -->
+<nav class="topnav">
+  <div class="logo">AI-<em>DZHT</em></div>
+  <div class="nav-links">
+    <div class="navlink active">项目管理</div>
+    <div class="navlink">Agent 管理</div>
+    <div class="navlink">知识库</div>
+    <div class="navlink">审计日志</div>
+    <div class="navlink">设置</div>
+  </div>
+  <div class="nav-right">
+    <div class="user-badge">
+      <div class="user-dot"></div>
+      张珊珊 · 系统管理员
+    </div>
+  </div>
+</nav>
+
+<!-- ══ PAGE HEADER ══ -->
+<div class="page-header">
+  <div class="ph-top">
+    <div>
+      <div class="ph-title">项目管理</div>
+      <div class="ph-sub">管理所有客户项目及其研发需求，点击项目进入研发大盘</div>
+    </div>
+    <div class="ph-actions">
+      <button class="btn btn-secondary">导入项目</button>
+      <button class="btn btn-primary" onclick="openCreateModal()">＋ 新建项目</button>
+    </div>
+  </div>
+  <!-- Platform Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-tab active">
+      <div>
+        <div class="st-val text-blue">6</div>
+        <div class="st-label">全部项目</div>
+      </div>
+    </div>
+    <div class="st-divider"></div>
+    <div class="stat-tab">
+      <div>
+        <div class="st-val text-green">4</div>
+        <div class="st-label">进行中</div>
+      </div>
+    </div>
+    <div class="st-divider"></div>
+    <div class="stat-tab">
+      <div>
+        <div class="st-val">23</div>
+        <div class="st-label">本月需求总数</div>
+      </div>
+    </div>
+    <div class="st-divider"></div>
+    <div class="stat-tab">
+      <div>
+        <div class="st-val text-blue">8</div>
+        <div class="st-label">流水线运行中</div>
+      </div>
+    </div>
+    <div class="st-divider"></div>
+    <div class="stat-tab">
+      <div>
+        <div class="st-val text-warn">3</div>
+        <div class="st-label">等待审批</div>
+      </div>
+    </div>
+    <div class="st-divider"></div>
+    <div class="stat-tab">
+      <div>
+        <div class="st-val">¥482</div>
+        <div class="st-label">今日 Token 费用</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MAIN CONTENT ══ -->
+<div class="main-content">
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input class="search-input" placeholder="搜索项目名称、客户…" type="text">
+    </div>
+    <div class="filter-group">
+      <div class="filter-btn on" onclick="setFilter(this)">全部</div>
+      <div class="filter-btn" onclick="setFilter(this)">进行中</div>
+      <div class="filter-btn" onclick="setFilter(this)">规划中</div>
+      <div class="filter-btn" onclick="setFilter(this)">已暂停</div>
+      <div class="filter-btn" onclick="setFilter(this)">已完成</div>
+    </div>
+    <div class="view-toggle">
+      <div class="vbtn on" onclick="setView(this,'grid')" title="卡片视图">⊞</div>
+      <div class="vbtn" onclick="setView(this,'list')" title="列表视图">☰</div>
+    </div>
+  </div>
+
+  <!-- Project Grid -->
+  <div class="project-grid" id="gridView">
+
+    <!-- ─── Project 1: 电商平台重构 ─── -->
+    <div class="project-card pinned" onclick="goDashboard('电商平台重构','PROJ-001')">
+      <div class="card-band" style="background:linear-gradient(90deg,#58a6ff,#1f6feb);"></div>
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-title-row">
+            <span class="card-icon">🛒</span>
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span class="card-name">电商平台重构</span>
+                <span class="pin-icon" title="已置顶">📌</span>
+              </div>
+              <span class="card-id">PROJ-001</span>
+            </div>
+          </div>
+          <span class="status-badge sb-active">进行中</span>
+        </div>
+        <div class="card-desc">面向 C 端用户的电商平台全栈重构项目，从单体架构迁移至微服务，同步完成 UI 体验升级。</div>
+        <div class="active-pipes">
+          <div class="pipe-pill"><div class="pipe-dot"></div>REQ-031 架构评审</div>
+          <div class="pipe-pill"><div class="pipe-dot"></div>REQ-029 测试中</div>
+          <div class="pipe-pill warn"><div class="pipe-dot"></div>REQ-027 等待审批</div>
+        </div>
+        <div class="req-bar-track" style="margin-bottom:6px;height:6px;background:#21262d;border-radius:3px;overflow:hidden;display:flex;">
+          <div class="req-seg rs-done"  style="width:45%;"></div>
+          <div class="req-seg rs-run"   style="width:20%;"></div>
+          <div class="req-seg rs-wait"  style="width:10%;"></div>
+          <div class="req-seg rs-queue" style="width:25%;"></div>
+        </div>
+        <div class="req-counts">
+          <div class="rc-item"><div class="rc-val text-green">9</div><div class="rc-label">已完成</div></div>
+          <div class="rc-item"><div class="rc-val text-blue">4</div><div class="rc-label">执行中</div></div>
+          <div class="rc-item"><div class="rc-val text-warn">1</div><div class="rc-label">等待审批</div></div>
+          <div class="rc-item"><div class="rc-val">6</div><div class="rc-label">待启动</div></div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="cf-meta">
+          <div class="cf-item"><span class="cf-icon">👤</span> 张珊珊</div>
+          <div class="cf-item"><span class="cf-icon">📅</span> 截止 5/31</div>
+          <div class="cf-item"><span class="cf-icon">💰</span> ¥1,240 累计</div>
+        </div>
+        <div class="card-actions">
+          <div class="card-action-btn" onclick="event.stopPropagation();goDashboard('电商平台重构','PROJ-001')">进入大盘 →</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Project 2: 用户中台建设 ─── -->
+    <div class="project-card" onclick="goDashboard('用户中台建设','PROJ-002')">
+      <div class="card-band" style="background:linear-gradient(90deg,#3fb950,#238636);"></div>
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-title-row">
+            <span class="card-icon">🏛️</span>
+            <div>
+              <div class="card-name">用户中台建设</div>
+              <span class="card-id">PROJ-002</span>
+            </div>
+          </div>
+          <span class="status-badge sb-active">进行中</span>
+        </div>
+        <div class="card-desc">统一用户账号体系、权限管理与认证服务，对接全公司 8 条业务线。</div>
+        <div class="active-pipes">
+          <div class="pipe-pill"><div class="pipe-dot"></div>REQ-015 开发中</div>
+          <div class="pipe-pill"><div class="pipe-dot"></div>REQ-016 需求分析</div>
+        </div>
+        <div class="req-bar-track" style="margin-bottom:6px;height:6px;background:#21262d;border-radius:3px;overflow:hidden;display:flex;">
+          <div class="req-seg rs-done" style="width:60%;"></div>
+          <div class="req-seg rs-run"  style="width:15%;"></div>
+          <div class="req-seg rs-queue"style="width:25%;"></div>
+        </div>
+        <div class="req-counts">
+          <div class="rc-item"><div class="rc-val text-green">6</div><div class="rc-label">已完成</div></div>
+          <div class="rc-item"><div class="rc-val text-blue">2</div><div class="rc-label">执行中</div></div>
+          <div class="rc-item"><div class="rc-val text-warn">0</div><div class="rc-label">等待审批</div></div>
+          <div class="rc-item"><div class="rc-val">2</div><div class="rc-label">待启动</div></div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="cf-meta">
+          <div class="cf-item"><span class="cf-icon">👤</span> 李明</div>
+          <div class="cf-item"><span class="cf-icon">📅</span> 截止 6/15</div>
+          <div class="cf-item"><span class="cf-icon">💰</span> ¥870 累计</div>
+        </div>
+        <div class="card-actions">
+          <div class="card-action-btn" onclick="event.stopPropagation();goDashboard('用户中台建设','PROJ-002')">进入大盘 →</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Project 3: 数据分析平台 ─── -->
+    <div class="project-card" onclick="goDashboard('数据分析平台','PROJ-003')">
+      <div class="card-band" style="background:linear-gradient(90deg,#d29922,#b08000);"></div>
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-title-row">
+            <span class="card-icon">📊</span>
+            <div>
+              <div class="card-name">数据分析平台</div>
+              <span class="card-id">PROJ-003</span>
+            </div>
+          </div>
+          <span class="status-badge sb-paused">已暂停</span>
+        </div>
+        <div class="card-desc">为运营团队提供自助式报表分析能力，支持拖拽配置大盘，接入实时数据流。</div>
+        <div class="active-pipes">
+          <span style="font-size:11px;color:#484f58;">— 无运行中的流水线</span>
+        </div>
+        <div class="req-bar-track" style="margin-bottom:6px;height:6px;background:#21262d;border-radius:3px;overflow:hidden;display:flex;">
+          <div class="req-seg rs-done" style="width:30%;"></div>
+          <div class="req-seg rs-queue"style="width:70%;"></div>
+        </div>
+        <div class="req-counts">
+          <div class="rc-item"><div class="rc-val text-green">3</div><div class="rc-label">已完成</div></div>
+          <div class="rc-item"><div class="rc-val text-blue">0</div><div class="rc-label">执行中</div></div>
+          <div class="rc-item"><div class="rc-val text-warn">0</div><div class="rc-label">等待审批</div></div>
+          <div class="rc-item"><div class="rc-val">7</div><div class="rc-label">待启动</div></div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="cf-meta">
+          <div class="cf-item"><span class="cf-icon">👤</span> 王芳</div>
+          <div class="cf-item"><span class="cf-icon">📅</span> 暂停中</div>
+          <div class="cf-item"><span class="cf-icon">💰</span> ¥340 累计</div>
+        </div>
+        <div class="card-actions">
+          <div class="card-action-btn" onclick="event.stopPropagation();">恢复项目</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Project 4: 供应链管理系统 ─── -->
+    <div class="project-card" onclick="goDashboard('供应链管理系统','PROJ-004')">
+      <div class="card-band" style="background:linear-gradient(90deg,#8957e5,#6e40c9);"></div>
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-title-row">
+            <span class="card-icon">🔗</span>
+            <div>
+              <div class="card-name">供应链管理系统</div>
+              <span class="card-id">PROJ-004</span>
+            </div>
+          </div>
+          <span class="status-badge sb-planning">规划中</span>
+        </div>
+        <div class="card-desc">采购、库存、物流一体化管理平台，支持多仓库管理和供应商协同门户。</div>
+        <div class="active-pipes">
+          <span style="font-size:11px;color:#484f58;">— 尚未启动任何需求</span>
+        </div>
+        <div class="req-bar-track" style="margin-bottom:6px;height:6px;background:#21262d;border-radius:3px;overflow:hidden;display:flex;">
+          <div class="req-seg rs-queue"style="width:100%;background:#21262d;"></div>
+        </div>
+        <div class="req-counts">
+          <div class="rc-item"><div class="rc-val text-green">0</div><div class="rc-label">已完成</div></div>
+          <div class="rc-item"><div class="rc-val text-blue">0</div><div class="rc-label">执行中</div></div>
+          <div class="rc-item"><div class="rc-val text-warn">0</div><div class="rc-label">等待审批</div></div>
+          <div class="rc-item"><div class="rc-val" style="color:#8957e5;">5</div><div class="rc-label">草稿中</div></div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="cf-meta">
+          <div class="cf-item"><span class="cf-icon">👤</span> 陈志远</div>
+          <div class="cf-item"><span class="cf-icon">📅</span> 计划 7/1 启动</div>
+        </div>
+        <div class="card-actions">
+          <div class="card-action-btn" onclick="event.stopPropagation();goDashboard('供应链管理系统','PROJ-004')">进入大盘 →</div>
+    <div class="project-card" onclick="goDashboard('AI 客服机器人','PROJ-005')">
+      <div class="card-band" style="background:linear-gradient(90deg,#f78166,#cf4a1c);"></div>
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-title-row">
+            <span class="card-icon">🤖</span>
+            <div>
+              <div class="card-name">AI 客服机器人</div>
+              <span class="card-id">PROJ-005</span>
+            </div>
+          </div>
+          <span class="status-badge sb-active">进行中</span>
+        </div>
+        <div class="card-desc">基于 LLM 的智能客服系统，支持多轮对话、工单自动创建和情绪识别分级处理。</div>
+        <div class="active-pipes">
+          <div class="pipe-pill"><div class="pipe-dot"></div>REQ-008 开发中</div>
+        </div>
+        <div class="req-bar-track" style="margin-bottom:6px;height:6px;background:#21262d;border-radius:3px;overflow:hidden;display:flex;">
+          <div class="req-seg rs-done" style="width:50%;"></div>
+          <div class="req-seg rs-run"  style="width:10%;"></div>
+          <div class="req-seg rs-queue"style="width:40%;"></div>
+        </div>
+        <div class="req-counts">
+          <div class="rc-item"><div class="rc-val text-green">4</div><div class="rc-label">已完成</div></div>
+          <div class="rc-item"><div class="rc-val text-blue">1</div><div class="rc-label">执行中</div></div>
+          <div class="rc-item"><div class="rc-val text-warn">0</div><div class="rc-label">等待审批</div></div>
+          <div class="rc-item"><div class="rc-val">3</div><div class="rc-label">待启动</div></div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="cf-meta">
+          <div class="cf-item"><span class="cf-icon">👤</span> 张珊珊</div>
+          <div class="cf-item"><span class="cf-icon">📅</span> 截止 5/15</div>
+          <div class="cf-item"><span class="cf-icon">💰</span> ¥560 累计</div>
+        </div>
+        <div class="card-actions">
+          <div class="card-action-btn" onclick="event.stopPropagation();goDashboard('AI 客服机器人','PROJ-005')">进入大盘 →</div>
+    <div class="new-project-card" onclick="openCreateModal()">
+      <div class="npc-icon">＋</div>
+      <div class="npc-text">新建项目</div>
+    </div>
+
+  </div><!-- /project-grid -->
+
+  <!-- List View (hidden by default) -->
+  <table class="project-table" id="listView">
+    <thead class="pt-head">
+      <tr>
+        <th>项目名称</th>
+        <th>状态</th>
+        <th>负责人</th>
+        <th>需求数</th>
+        <th>运行中</th>
+        <th>待审批</th>
+        <th>截止日期</th>
+        <th>累计费用</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="pt-row" onclick="goDashboard('电商平台重构','PROJ-001')">
+        <td><div class="pt-name">📌 🛒 电商平台重构 <span class="pt-id">PROJ-001</span></div></td>
+        <td><span class="status-badge sb-active">进行中</span></td>
+        <td>张珊珊</td>
+        <td>20</td>
+        <td class="text-blue">4</td>
+        <td class="text-warn">1</td>
+        <td>2026-05-31</td>
+        <td>¥1,240</td>
+      </tr>
+      <tr class="pt-row" onclick="goDashboard('用户中台建设','PROJ-002')">
+        <td><div class="pt-name">🏛️ 用户中台建设 <span class="pt-id">PROJ-002</span></div></td>
+        <td><span class="status-badge sb-active">进行中</span></td>
+        <td>李明</td>
+        <td>10</td>
+        <td class="text-blue">2</td>
+        <td class="text-warn">0</td>
+        <td>2026-06-15</td>
+        <td>¥870</td>
+      </tr>
+      <tr class="pt-row" onclick="goDashboard('数据分析平台','PROJ-003')">
+        <td><div class="pt-name">📊 数据分析平台 <span class="pt-id">PROJ-003</span></div></td>
+        <td><span class="status-badge sb-paused">已暂停</span></td>
+        <td>王芳</td>
+        <td>10</td>
+        <td class="text-blue">0</td>
+        <td class="text-warn">0</td>
+        <td>—</td>
+        <td>¥340</td>
+      </tr>
+      <tr class="pt-row" onclick="goDashboard('供应链管理系统','PROJ-004')">
+        <td><div class="pt-name">🔗 供应链管理系统 <span class="pt-id">PROJ-004</span></div></td>
+        <td><span class="status-badge sb-planning">规划中</span></td>
+        <td>陈志远</td>
+        <td>5</td>
+        <td class="text-blue">0</td>
+        <td class="text-warn">0</td>
+        <td>2026-07-01</td>
+        <td>—</td>
+      </tr>
+      <tr class="pt-row" onclick="goDashboard('AI 客服机器人','PROJ-005')">
+        <td><div class="pt-name">🤖 AI 客服机器人 <span class="pt-id">PROJ-005</span></div></td>
+        <td><span class="status-badge sb-active">进行中</span></td>
+        <td>张珊珊</td>
+        <td>8</td>
+        <td class="text-blue">1</td>
+        <td class="text-warn">0</td>
+        <td>2026-05-15</td>
+        <td>¥560</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div><!-- /main-content -->
+
+
+<!-- ══ DRAWER — PROJECT DETAIL PREVIEW ══ -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="projectDrawer">
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title" id="drawerTitle">电商平台重构</div>
+      <div class="drawer-sub" id="drawerSub">PROJ-001 · 进行中 · 负责人：张珊珊</div>
+    </div>
+    <span class="drawer-close" onclick="closeDrawer()">×</span>
+  </div>
+  <div class="drawer-body">
+
+    <div class="drawer-section">概览</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div style="background:#21262d;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:#3fb950;">9</div>
+        <div style="font-size:10px;color:#8b949e;margin-top:2px;">已完成</div>
+      </div>
+      <div style="background:#21262d;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:#58a6ff;">4</div>
+        <div style="font-size:10px;color:#8b949e;margin-top:2px;">执行中</div>
+      </div>
+      <div style="background:#21262d;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:#d29922;">1</div>
+        <div style="font-size:10px;color:#8b949e;margin-top:2px;">等待审批</div>
+      </div>
+      <div style="background:#21262d;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;">6</div>
+        <div style="font-size:10px;color:#8b949e;margin-top:2px;">待启动</div>
+      </div>
+    </div>
+
+    <div class="drawer-section">需求列表</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span style="font-size:11px;color:#8b949e;">共 20 条需求</span>
+      <button class="btn btn-primary" style="padding:4px 12px;font-size:11px;" onclick="openNewReqModal()">＋ 新建需求</button>
+    </div>
+    <div class="req-list">
+
+      <div class="req-item">
+        <div class="req-item-top">
+          <span class="req-id">REQ-031</span>
+          <span class="req-status-badge rsb-wait">等待审批</span>
+        </div>
+        <div class="req-title">用户权限管理模块重构</div>
+        <div class="req-meta">
+          <span>负责人：张珊珊</span>
+          <span>截止：04/30</span>
+          <span class="p-high pri-badge">高优先级</span>
+        </div>
+        <div class="req-pipeline">
+          <div class="rp-dot rp-done" title="需求 Agent ✓"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done" title="设计 Agent ✓"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done" title="架构 Agent ✓"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-wait" title="等待架构审批"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-idle" title="开发 Agent 待启动"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-idle" title="测试 Agent 待启动"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-idle" title="部署 待启动"></div>
+        </div>
+      </div>
+
+      <div class="req-item">
+        <div class="req-item-top">
+          <span class="req-id">REQ-030</span>
+          <span class="req-status-badge rsb-run">执行中</span>
+        </div>
+        <div class="req-title">商品搜索性能优化</div>
+        <div class="req-meta">
+          <span>负责人：李明</span>
+          <span>截止：04/25</span>
+          <span class="p-urgent pri-badge">紧急</span>
+        </div>
+        <div class="req-pipeline">
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done" title="审批通过"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-run" title="开发 Agent 执行中"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-idle"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-idle"></div>
+        </div>
+      </div>
+
+      <div class="req-item">
+        <div class="req-item-top">
+          <span class="req-id">REQ-029</span>
+          <span class="req-status-badge rsb-run">执行中</span>
+        </div>
+        <div class="req-title">订单状态推送通知（Bug 修复流程）</div>
+        <div class="req-meta">
+          <span>负责人：张珊珊</span>
+          <span>截止：04/22</span>
+          <span class="p-high pri-badge">高优先级</span>
+        </div>
+        <div class="req-pipeline" style="gap:3px;">
+          <!-- Bug修复流程：跳过设计和架构 -->
+          <div class="rp-dot rp-done" title="需求分析 ✓"></div>
+          <div class="rp-line"></div>
+          <div style="font-size:9px;color:#484f58;padding:0 3px;">跳过设计/架构</div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-run" title="测试 Agent 执行中"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-idle"></div>
+        </div>
+      </div>
+
+      <div class="req-item">
+        <div class="req-item-top">
+          <span class="req-id">REQ-028</span>
+          <span class="req-status-badge rsb-done">已完成</span>
+        </div>
+        <div class="req-title">购物车并发锁优化</div>
+        <div class="req-meta">
+          <span>负责人：王芳</span>
+          <span>完成：04/08</span>
+          <span class="p-normal pri-badge">普通</span>
+        </div>
+        <div class="req-pipeline">
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+          <div class="rp-line"></div>
+          <div class="rp-dot rp-done"></div>
+        </div>
+      </div>
+
+      <div class="req-item" style="opacity:.6;">
+        <div class="req-item-top">
+          <span class="req-id">REQ-032</span>
+          <span class="req-status-badge rsb-draft">草稿</span>
+        </div>
+        <div class="req-title">多语言国际化支持</div>
+        <div class="req-meta">
+          <span>提出人：产品经理</span>
+          <span>未分配负责人</span>
+          <span class="p-low pri-badge">低优先级</span>
+        </div>
+        <div style="font-size:11px;color:#484f58;margin-top:6px;">尚未选择流程模板，点击启动</div>
+      </div>
+
+    </div>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn btn-secondary" onclick="closeDrawer()">关闭</button>
+    <button class="btn btn-secondary" onclick="alert('项目设置（演示）')">⚙ 项目设置</button>
+    <button class="btn btn-primary" onclick="alert('进入研发大盘（演示）')">进入研发大盘 →</button>
+  </div>
+</div>
+
+
+<!-- ══ MODAL — CREATE PROJECT ══ -->
+<div class="modal-overlay" id="createProjectModal" onclick="closeCreateModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">新建项目</div>
+      <span class="modal-close" onclick="closeCreateModal()">×</span>
+    </div>
+    <div class="modal-body">
+
+      <div class="form-row">
+        <div class="form-label">项目名称 <span class="required">*</span></div>
+        <input class="form-input" type="text" placeholder="例：电商平台重构 v2">
+      </div>
+
+      <div class="form-row">
+        <div class="form-label">项目描述</div>
+        <textarea class="form-input" placeholder="简要描述项目目标和背景…"></textarea>
+      </div>
+
+      <div class="two-col">
+        <div class="form-row">
+          <div class="form-label">负责人 <span class="required">*</span></div>
+          <select class="form-input">
+            <option>张珊珊</option>
+            <option>李明</option>
+            <option>王芳</option>
+            <option>陈志远</option>
+          </select>
+          <div class="form-hint">负责人将接收审批通知</div>
+        </div>
+        <div class="form-row">
+          <div class="form-label">优先级</div>
+          <select class="form-input">
+            <option>普通</option>
+            <option>高优先级</option>
+            <option>紧急</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="form-row">
+          <div class="form-label">计划开始日期</div>
+          <input class="form-input" type="date" value="2026-04-10">
+        </div>
+        <div class="form-row">
+          <div class="form-label">目标截止日期</div>
+          <input class="form-input" type="date">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-label">项目颜色标识</div>
+        <div class="color-options">
+          <div class="color-opt selected" style="background:linear-gradient(135deg,#58a6ff,#1f6feb);" onclick="selectColor(this)"></div>
+          <div class="color-opt" style="background:linear-gradient(135deg,#3fb950,#238636);" onclick="selectColor(this)"></div>
+          <div class="color-opt" style="background:linear-gradient(135deg,#d29922,#b08000);" onclick="selectColor(this)"></div>
+          <div class="color-opt" style="background:linear-gradient(135deg,#8957e5,#6e40c9);" onclick="selectColor(this)"></div>
+          <div class="color-opt" style="background:linear-gradient(135deg,#f78166,#cf4a1c);" onclick="selectColor(this)"></div>
+          <div class="color-opt" style="background:linear-gradient(135deg,#39d353,#1a7f37);" onclick="selectColor(this)"></div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-label">默认流程模板</div>
+        <select class="form-input">
+          <option>完整流程（需求→设计→架构→开发→测试→部署）</option>
+          <option>Bug 修复（需求→开发→测试→部署，跳过设计/架构）</option>
+          <option>快速变更（需求→开发→部署，跳过设计/架构/独立测试）</option>
+          <option>仅后端（无设计 Agent）</option>
+        </select>
+        <div class="form-hint">项目级默认模板，创建需求时可单独覆盖</div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCreateModal()">取消</button>
+      <button class="btn btn-primary" onclick="alert('项目已创建（演示）');closeCreateModal()">创建项目</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL — CREATE REQUIREMENT ══ -->
+<div class="modal-overlay" id="newReqModal" onclick="closeNewReqModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">新建需求 · 电商平台重构</div>
+      <span class="modal-close" onclick="closeNewReqModal()">×</span>
+    </div>
+    <div class="modal-body">
+
+      <div class="form-row">
+        <div class="form-label">需求标题 <span class="required">*</span></div>
+        <input class="form-input" type="text" placeholder="简洁描述这个需求要做什么">
+      </div>
+
+      <div class="form-row">
+        <div class="form-label">需求描述</div>
+        <textarea class="form-input" rows="4" placeholder="详细描述业务背景、目标用户、期望效果…"></textarea>
+      </div>
+
+      <div class="two-col">
+        <div class="form-row">
+          <div class="form-label">优先级 <span class="required">*</span></div>
+          <select class="form-input">
+            <option>普通</option>
+            <option>高优先级</option>
+            <option>紧急</option>
+            <option>低优先级</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-label">负责人 <span class="required">*</span></div>
+          <select class="form-input">
+            <option>张珊珊</option>
+            <option>李明</option>
+            <option>王芳</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="form-row">
+          <div class="form-label">提出人</div>
+          <input class="form-input" type="text" value="张珊珊" placeholder="谁提出的这个需求">
+        </div>
+        <div class="form-row">
+          <div class="form-label">截止日期</div>
+          <input class="form-input" type="date">
+        </div>
+      </div>
+
+      <!-- 流程模板 — 核心选择 -->
+      <div class="form-row">
+        <div class="form-label">
+          选择 Agent 流程模板 <span class="required">*</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+
+          <label style="display:flex;align-items:flex-start;gap:10px;background:#21262d;border:1.5px solid #1f6feb;border-radius:8px;padding:12px 14px;cursor:pointer;">
+            <input type="radio" name="pipeline" checked style="accent-color:#58a6ff;margin-top:2px;flex-shrink:0;">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:2px;">完整流程</div>
+              <div style="font-size:11px;color:#8b949e;">需求 → 设计 → 架构 → [审批] → 开发 → 测试 → [审批] → 部署</div>
+            </div>
+          </label>
+
+          <label style="display:flex;align-items:flex-start;gap:10px;background:#21262d;border:1.5px solid #30363d;border-radius:8px;padding:12px 14px;cursor:pointer;">
+            <input type="radio" name="pipeline" style="accent-color:#58a6ff;margin-top:2px;flex-shrink:0;">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:2px;">Bug 修复</div>
+              <div style="font-size:11px;color:#8b949e;">需求 → 开发 → 测试 → 部署（跳过设计 / 架构）</div>
+            </div>
+          </label>
+
+          <label style="display:flex;align-items:flex-start;gap:10px;background:#21262d;border:1.5px solid #30363d;border-radius:8px;padding:12px 14px;cursor:pointer;">
+            <input type="radio" name="pipeline" style="accent-color:#58a6ff;margin-top:2px;flex-shrink:0;">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:2px;">快速变更</div>
+              <div style="font-size:11px;color:#8b949e;">需求 → 开发 → 部署（最简流程，适合配置类改动）</div>
+            </div>
+          </label>
+
+          <label style="display:flex;align-items:flex-start;gap:10px;background:#21262d;border:1.5px solid #30363d;border-radius:8px;padding:12px 14px;cursor:pointer;">
+            <input type="radio" name="pipeline" style="accent-color:#58a6ff;margin-top:2px;flex-shrink:0;">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:2px;">自定义</div>
+              <div style="font-size:11px;color:#8b949e;">手动选择参与的 Agent 和审批节点</div>
+            </div>
+          </label>
+
+        </div>
+        <div class="form-hint" style="margin-top:8px;">流程启动后不可更改，请确认后再提交</div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeNewReqModal()">取消</button>
+      <button class="btn btn-secondary" onclick="closeNewReqModal()">保存草稿</button>
+      <button class="btn btn-primary" onclick="alert('需求已创建并启动流水线（演示）');closeNewReqModal()">创建并启动流水线 ▶</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+/* ══ VIEW TOGGLE ══ */
+function setView(el, view) {
+  document.querySelectorAll('.vbtn').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+  if (view === 'grid') {
+    document.getElementById('gridView').style.display = 'grid';
+    document.getElementById('listView').style.display = 'none';
+  } else {
+    document.getElementById('gridView').style.display = 'none';
+    document.getElementById('listView').style.display = 'table';
+  }
+}
+
+/* ══ FILTER ══ */
+function setFilter(el) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+}
+
+/* ══ DRAWER → replaced by goDashboard ══ */
+function openDrawer(id) { /* unused */ }
+function closeDrawer() { /* unused */ }
+
+/* ══ GO TO DASHBOARD ══ */
+function goDashboard(name, id) {
+  sessionStorage.setItem('projectName', name);
+  sessionStorage.setItem('projectId', id);
+  window.location.href = 'prototype-dashboard.html';
+}
+
+/* ══ CREATE PROJECT MODAL ══ */
+function openCreateModal() {
+  document.getElementById('createProjectModal').classList.add('open');
+}
+function closeCreateModal() {
+  document.getElementById('createProjectModal').classList.remove('open');
+}
+function closeCreateModalOutside(e) {
+  if (e.target === document.getElementById('createProjectModal')) closeCreateModal();
+}
+function selectColor(el) {
+  document.querySelectorAll('.color-opt').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+/* ══ NEW REQUIREMENT MODAL ══ */
+function openNewReqModal() {
+  document.getElementById('newReqModal').classList.add('open');
+}
+function closeNewReqModal() {
+  document.getElementById('newReqModal').classList.remove('open');
+}
+function closeNewReqModalOutside(e) {
+  if (e.target === document.getElementById('newReqModal')) closeNewReqModal();
+}
+
+/* ══ RADIO LABEL HIGHLIGHT ══ */
+document.addEventListener('change', function(e) {
+  if (e.target.name === 'pipeline') {
+    document.querySelectorAll('[name=pipeline]').forEach(r => {
+      r.closest('label').style.borderColor = r.checked ? '#1f6feb' : '#30363d';
+    });
+  }
+});
+</script>
+</body>
+</html>
