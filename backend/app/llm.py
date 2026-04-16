@@ -276,54 +276,95 @@ async def _chat_with_tools_openai(
     return {k: v for k, v in msg.model_dump().items() if v is not None}
 
 
-async def _chat_with_tools_anthropic(
-    cfg: LLMConfig,
-    messages: list[dict],
-    tools: list[dict],
-    max_tokens: int,
-) -> dict:
-    """Simulate tool-calling via Claude CLI by embedding tool defs in the prompt."""
-    # Build tool description text
-    tool_lines = ["你必须调用以下工具之一。以严格 JSON 回复，格式见末尾。\n\n可用工具："]
+def _build_tool_system_prompt(messages: list[dict], tools: list[dict]) -> str:
+    """Build the system prompt with tool definitions for Commander."""
+    # Extract original system content
+    system_content = ""
+    for m in messages:
+        if m.get("role") == "system":
+            system_content = m["content"]
+            break
+
+    # Build tool definitions
+    tool_defs = []
     for t in tools:
         fn = t.get("function", {})
-        params = json.dumps(fn.get("parameters", {}), ensure_ascii=False)
-        tool_lines.append(f"- {fn['name']}: {fn.get('description', '')}\n  参数: {params}")
-    tool_lines.append(
-        '\n回复格式（严格 JSON，不要有其他文字）：\n'
-        '{"tool_calls": [{"function": {"name": "工具名", "arguments": {参数JSON对象}}}]}'
-    )
-    tool_instruction = "\n".join(tool_lines)
+        name = fn["name"]
+        params = fn.get("parameters", {}).get("properties", {})
+        required = fn.get("parameters", {}).get("required", [])
+        param_desc = []
+        for pname, pinfo in params.items():
+            req_mark = "（必填）" if pname in required else "（可选）"
+            param_desc.append(f"    - {pname}: {pinfo.get('description', '')} {req_mark}")
+        params_text = "\n".join(param_desc) if param_desc else "    （无参数）"
+        tool_defs.append(f"  {name}: {fn.get('description', '')}\n{params_text}")
+    tools_block = "\n\n".join(tool_defs)
 
-    # Inject tool instruction into system message
-    enhanced: list[dict] = []
-    has_system = False
+    return f"""{system_content}
+
+===== 工具调用协议（必须严格遵守）=====
+
+你是一个自动化流水线执行引擎。你只能通过调用工具来执行操作，不能与用户对话。
+
+可用工具：
+{tools_block}
+
+【核心规则】
+1. 你的每次回复必须且只能是一个合法 JSON 对象
+2. 绝对不要输出解释、问候、分析或任何自然语言
+3. 这些工具是你唯一的操作方式，你必须调用它们
+4. JSON 格式：
+
+{{"tool_calls": [{{"function": {{"name": "工具名", "arguments": {{参数对象}}}}}}]}}
+
+【示例】调用 invoke_agent 执行步骤 s1：
+{{"tool_calls": [{{"function": {{"name": "invoke_agent", "arguments": {{"step_id": "s1"}}}}}}]}}"""
+
+
+def _build_tool_user_prompt(messages: list[dict]) -> str:
+    """Build the user prompt with conversation history for Commander."""
+    conversation_parts = []
     for m in messages:
-        if m["role"] == "system":
-            enhanced.append({"role": "system", "content": m["content"] + "\n\n" + tool_instruction})
-            has_system = True
-        elif m["role"] == "tool":
-            # Convert tool result to user message
-            enhanced.append({"role": "user", "content": f"工具返回结果：{m.get('content', '')}"})
-        elif m.get("tool_calls"):
-            # Convert assistant tool_calls to text
-            calls = ", ".join(tc["function"]["name"] for tc in m["tool_calls"])
-            enhanced.append({"role": "assistant", "content": f"调用工具：{calls}"})
-        else:
-            enhanced.append(m)
-    if not has_system:
-        enhanced.insert(0, {"role": "system", "content": tool_instruction})
+        role = m.get("role", "")
+        content = m.get("content", "")
+        if role == "system":
+            continue
+        elif role == "user":
+            conversation_parts.append(f"[用户]: {content}")
+        elif role == "assistant":
+            if m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", {})
+                    conversation_parts.append(
+                        f'[你的操作]: 调用工具 {fn["name"]}，参数: {fn.get("arguments", "{}")}'
+                    )
+            elif content:
+                conversation_parts.append(f"[你的回复]: {content}")
+        elif role == "tool":
+            conversation_parts.append(f"[工具返回结果]: {content}")
 
-    raw = await _chat_anthropic(cfg, enhanced, max_tokens)
+    history = "\n".join(conversation_parts) if conversation_parts else "（无历史对话）"
+    return f"对话历史：\n{history}\n\n请立即输出 JSON 调用下一个工具。"
 
-    # Parse response into OpenAI-compatible format
+
+def _parse_tool_response(raw: str, tools: list[dict]) -> dict:
+    """Parse raw LLM text into an OpenAI-compatible message dict with tool_calls."""
+    data = None
     try:
-        data = json.loads(raw) if raw.strip().startswith("{") else _extract_json(raw)
+        stripped = raw.strip()
+        # Remove markdown code fences if present
+        if stripped.startswith("```"):
+            lines = stripped.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            stripped = "\n".join(lines).strip()
+        if stripped.startswith("{"):
+            data = json.loads(stripped)
+        else:
+            data = _extract_json(stripped)
     except (json.JSONDecodeError, ValueError):
-        return {"role": "assistant", "content": raw}
+        pass
 
-    result: dict = {"role": "assistant"}
-    if data.get("tool_calls"):
+    if data and data.get("tool_calls"):
         tool_calls = []
         for i, tc in enumerate(data["tool_calls"]):
             fn = tc.get("function", {})
@@ -335,9 +376,87 @@ async def _chat_with_tools_anthropic(
                     "arguments": json.dumps(fn.get("arguments", {}), ensure_ascii=False),
                 },
             })
-        result["tool_calls"] = tool_calls
-    if data.get("content"):
-        result["content"] = data["content"]
+        result: dict = {"role": "assistant", "tool_calls": tool_calls}
+        if data.get("content"):
+            result["content"] = data["content"]
+        return result
+
+    # Fallback: try to detect a direct tool name + arguments pattern
+    tool_names = [t["function"]["name"] for t in tools]
+    for tn in tool_names:
+        if f'"{tn}"' in (raw or ""):
+            try:
+                start = raw.find("{")
+                end = raw.rfind("}") + 1
+                if start >= 0 and end > start:
+                    candidate = json.loads(raw[start:end])
+                    if candidate.get("tool_calls") or candidate.get("function"):
+                        if candidate.get("function"):
+                            candidate = {"tool_calls": [candidate]}
+                        return _parse_tool_response(
+                            json.dumps(candidate, ensure_ascii=False), tools
+                        )
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    return {"role": "assistant", "content": raw or ""}
+
+
+async def _chat_with_tools_anthropic(
+    cfg: LLMConfig,
+    messages: list[dict],
+    tools: list[dict],
+    max_tokens: int,
+) -> dict:
+    """Tool-calling via Claude CLI with --bare, --system-prompt, and --tools '' to
+    disable built-in Claude Code behavior and force structured JSON output."""
+    system_prompt = _build_tool_system_prompt(messages, tools)
+    user_prompt = _build_tool_user_prompt(messages)
+    env = _build_cli_env(cfg)
+
+    for attempt in range(3):
+        cmd = [
+            CLAUDE_CLI, "-p",
+            "--output-format", "json",
+            "--model", cfg.model,
+            "--system-prompt", system_prompt,
+            "--tools", "",
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        stdout, stderr = await proc.communicate(user_prompt.encode())
+
+        if proc.returncode != 0:
+            try:
+                err_data = json.loads(stdout.decode())
+                err_msg = err_data.get("result", stderr.decode().strip())
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                err_msg = stderr.decode().strip() or stdout.decode().strip()
+            raise RuntimeError(f"Claude CLI 执行失败: {err_msg}")
+
+        data = json.loads(stdout.decode())
+        if data.get("is_error"):
+            raise RuntimeError(f"Claude 返回错误: {data.get('result', '')}")
+
+        raw = (data.get("result") or "").strip()
+        result = _parse_tool_response(raw, tools)
+
+        if result.get("tool_calls"):
+            return result
+
+        # Retry: append error feedback to user prompt
+        user_prompt = (
+            f"{user_prompt}\n\n"
+            f"[错误] 你的回复不是合法的工具调用 JSON：{raw[:200]}\n"
+            f"只输出 JSON，不要有其他文字。"
+        )
+
     return result
 
 
@@ -363,7 +482,7 @@ SYSTEM_PROMPT = """你是一个 AI 研发工厂平台的工作流顾问。
   "warnings": ["可选风险提示"]
 }
 
-agentRoles 可选值：analyst, pm, ux, architect, sm, dev, qa, quickdev, techwriter"""
+agentRoles 可选值：analyst, pm, ux, architect, sm, dev, qa, quickdev, techwriter, reqLead"""
 
 
 def build_user_message(req: WorkflowSuggestRequest) -> str:
@@ -535,7 +654,22 @@ _AGENT_PERSONAS: dict[str, str] = {
     "Quinn":   "你是 Quinn，QA 工程师，擅长自动化测试设计和缺陷分析。",
     "Barry":   "你是 Barry，全栈快速开发工程师，擅长快速原型实现。",
     "Paige":   "你是 Paige，技术文档专家，擅长接口文档、部署指南编写。",
+    "Lena":    "你是 Lena，务实的需求总监，擅长从商业洞察到产品规格的全链路需求管理。",
 }
+
+
+def _build_persona(agent_name: str, agent_role: str, prompt_blocks: dict | None = None) -> str:
+    """从 promptBlocks 构建 persona（优先），fallback 到 _AGENT_PERSONAS 硬编码。"""
+    if prompt_blocks and prompt_blocks.get("roleDefinition"):
+        parts = [prompt_blocks["roleDefinition"]]
+        if prompt_blocks.get("capabilityScope"):
+            parts.append(f"能力范围：{prompt_blocks['capabilityScope']}")
+        if prompt_blocks.get("behaviorConstraints"):
+            parts.append(f"行为约束：{prompt_blocks['behaviorConstraints']}")
+        if prompt_blocks.get("outputSpec"):
+            parts.append(f"输出规范：{prompt_blocks['outputSpec']}")
+        return "\n".join(parts)
+    return _AGENT_PERSONAS.get(agent_name, f"你是 {agent_name}，{agent_role or 'AI 助手'}。")
 
 _STREAM_LOG_SYSTEM = """{persona}
 
@@ -566,9 +700,10 @@ async def stream_step_log(
     commands: str,
     req_title: str,
     req_summary: str,
+    prompt_blocks: dict | None = None,
 ):
     """逐行 yield 真实 LLM 生成的执行日志。"""
-    persona = _AGENT_PERSONAS.get(agent_name, f"你是 {agent_name}，{agent_role or 'AI 助手'}。")
+    persona = _build_persona(agent_name, agent_role, prompt_blocks)
     system = _STREAM_LOG_SYSTEM.format(
         persona=persona, step_name=step_name, commands=commands or step_name
     )
@@ -702,6 +837,19 @@ async def get_artifact_content(req: ArtifactContentRequest) -> ArtifactContentRe
 
 # ── Worker Agent（真实执行，携带 assemble_context 注入）───────────────────────
 
+_HIGH_TOKEN_CMDS = {"CP", "EP", "CA", "CU"}
+_MEDIUM_TOKEN_CMDS = {"BP", "MR", "DR", "TR", "CB", "VP", "QA"}
+
+
+def _resolve_max_tokens(commands: str) -> int:
+    """根据命令类型决定 max_tokens：PRD/架构类 4000，研究类 3000，其余 2000。"""
+    codes = {c.strip() for c in (commands or "").replace("→", ",").split(",") if c.strip()}
+    if codes & _HIGH_TOKEN_CMDS:
+        return 4000
+    if codes & _MEDIUM_TOKEN_CMDS:
+        return 3000
+    return 2000
+
 _WORKER_SYSTEM = """{persona}
 
 你正在执行需求「{req_title}」的步骤「{step_name}」（命令：{commands}）。
@@ -718,7 +866,7 @@ _WORKER_SYSTEM = """{persona}
       "name": "产出物名称",
       "type": "document|code|design|report|plan|test",
       "summary": "1-2句摘要",
-      "content": "完整 Markdown 或代码内容（500-1200字）"
+      "content": "完整 Markdown 或代码内容"
     }}
   ],
   "suggestedContextUpdates": [
@@ -750,9 +898,10 @@ async def execute_worker_agent(
     req_summary: str,
     project_context: dict,
     prev_artifact_summaries: str,
+    prompt_blocks: dict | None = None,
 ) -> dict:
     """执行 Worker Agent，返回 {artifacts: [...], suggestedContextUpdates: [...]}"""
-    persona = _AGENT_PERSONAS.get(agent_name, f"你是 {agent_name}，{agent_role or 'AI 助手'}。")
+    persona = _build_persona(agent_name, agent_role, prompt_blocks)
     context_block = assemble_context(project_context, agent_name)
 
     system = _WORKER_SYSTEM.format(
@@ -770,7 +919,7 @@ async def execute_worker_agent(
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        max_tokens=2000,
+        max_tokens=_resolve_max_tokens(commands),
         json_mode=True,
     )
 
@@ -782,4 +931,450 @@ async def execute_worker_agent(
     return {
         "artifacts": data.get("artifacts", []),
         "suggestedContextUpdates": data.get("suggestedContextUpdates", []),
+    }
+
+
+# ── 逐命令执行 + 审查 + 知识沉淀 ───────────────────────────────────────────────
+
+_CMD_NAMES: dict[str, str] = {
+    "BP": "头脑风暴", "MR": "市场研究", "DR": "领域研究",
+    "TR": "技术研究", "CB": "产品简报", "DP": "项目文档化",
+    "CP": "创建 PRD", "VP": "验证 PRD", "EP": "编辑 PRD",
+    "CU": "创建 UX 设计", "CA": "创建架构", "GPC": "生成项目上下文",
+    "DS": "Story 开发", "CS": "创建 Story", "SP": "Sprint 规划",
+    "QA": "自动化测试", "CR": "代码审查", "QQ": "快速开发",
+    "CE": "创建 Epic", "IR": "就绪检查", "CC": "方向修正",
+    "VS": "验证 Story", "SS": "Sprint 状态", "ER": "复盘",
+    "WD": "编写文档", "MG": "Mermaid 图表", "VD": "验证文档", "EC": "解释概念",
+}
+
+_CMD_REVIEW_POLICY: dict[str, int] = {
+    "CP": 3, "EP": 3,              # PRD 类：完整三轮审查
+    "MR": 2, "DR": 2, "CB": 2,     # 研究/报告类：两轮
+    "BP": 1, "TR": 1,              # 发散/探索类：一轮结构审查
+    "VP": 0,                        # 验证命令本身就是审查，跳过
+}
+
+_KNOWLEDGE_ENABLED_ROLES = {"reqLead", "analyst", "pm"}
+
+_SINGLE_CMD_SYSTEM = """{persona}
+
+你正在执行需求「{req_title}」中的命令「{cmd_code} — {cmd_name}」。
+
+{context_block}
+
+前序产出物（可参考）：
+{prev_outputs}
+
+请以合法 JSON 格式输出，只包含 1 个产出物：
+{{
+  "artifact": {{
+    "name": "产出物名称",
+    "type": "document|report|plan|design|code|test",
+    "summary": "1-2句摘要",
+    "content": "完整 Markdown 内容"
+  }}
+}}
+只输出 JSON，不要有任何其他文字。"""
+
+
+async def _execute_single_command(
+    cmd_code: str,
+    cmd_name: str,
+    persona: str,
+    req_title: str,
+    req_summary: str,
+    context_block: str,
+    prev_outputs: str,
+    max_tokens: int = 3000,
+) -> dict:
+    """单命令执行，返回 1 个 artifact dict。"""
+    system = _SINGLE_CMD_SYSTEM.format(
+        persona=persona,
+        req_title=req_title,
+        cmd_code=cmd_code,
+        cmd_name=cmd_name,
+        context_block=context_block,
+        prev_outputs=prev_outputs or "（无）",
+    )
+    raw = await _chat(
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"需求描述：{req_summary or '（无）'}"},
+        ],
+        max_tokens=max_tokens,
+        json_mode=True,
+    )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = _extract_json(raw)
+    return data.get("artifact", {})
+
+
+# ── 审查 Prompts ─────────────────────────────────────────────────────────────
+
+_REVIEW_ADVERSARIAL = """你是一个严厉的对抗性审查员。找出以下文档中的：
+1. 逻辑缺口和自相矛盾
+2. 未经验证的假设
+3. 模糊或不可操作的描述
+4. 缺失的利益相关者视角
+5. 过度乐观的预期
+
+文档内容：
+{document}
+
+以 JSON 输出：{{"issues": [{{"severity": "critical|major|minor", "location": "位置", "issue": "问题", "suggestion": "建议"}}], "summary": "总评"}}
+只输出 JSON。"""
+
+_REVIEW_EDGE_CASE = """你是一个边界用例猎人。遍历以下文档中每个功能点，找出未处理的：
+1. 边界条件（空值、极端值、并发）
+2. 异常路径（网络失败、权限不足、数据不一致）
+3. 用户误操作场景
+4. 跨系统依赖的失败点
+
+文档内容：
+{document}
+
+以 JSON 输出：{{"edgeCases": [{{"area": "区域", "scenario": "场景", "risk": "风险", "recommendation": "建议"}}], "summary": "总评"}}
+只输出 JSON。"""
+
+_REVIEW_STRUCTURAL = """你是一个结构编辑。审查以下文档的：
+1. 结构是否合理（章节顺序、层级）
+2. 是否有重复或冗余
+3. 是否缺少必要章节（执行摘要、验收标准、非功能需求等）
+4. 表述是否清晰无歧义
+5. 是否可被下游工程师/设计师直接消费
+
+文档内容：
+{document}
+
+以 JSON 输出：{{"structuralIssues": [{{"type": "missing|redundant|unclear|reorder", "location": "位置", "issue": "问题", "suggestion": "建议"}}], "completenessScore": 8, "summary": "总评"}}
+只输出 JSON。"""
+
+_REVISE_SYSTEM = """{persona}
+
+你之前产出了一份文档，现在收到了审查反馈。请根据反馈修订文档。
+
+原始文档：
+{original}
+
+审查反馈：
+{review_feedback}
+
+要求：
+1. 逐条处理每个审查问题
+2. 保留原文档中没有问题的部分
+3. 只输出修订后的完整文档（Markdown 格式）
+4. 不要输出任何解释，只输出文档内容"""
+
+
+# ── 知识沉淀 Prompt ──────────────────────────────────────────────────────────
+
+_KNOWLEDGE_EXTRACT = """你是知识提炼专家。从以下产出物中提取可复用的结构化知识。
+
+产出物内容：
+{artifacts_content}
+
+提取以下类型的知识（只提取真正有价值、可复用的条目）：
+
+以 JSON 输出：
+{{
+  "items": [
+    {{
+      "type": "domain_term",
+      "term": "术语名",
+      "definition": "定义",
+      "scope": "all"
+    }},
+    {{
+      "type": "business_rule",
+      "text": "规则内容",
+      "scope": "all|dev|qa|pm|design|architect",
+      "source": "来源产出物名称"
+    }},
+    {{
+      "type": "market_insight",
+      "title": "洞察标题",
+      "insight": "洞察内容",
+      "evidence": "支撑数据/来源"
+    }},
+    {{
+      "type": "checklist_item",
+      "text": "检查项内容",
+      "scope": "all|dev|qa|pm",
+      "category": "类别"
+    }}
+  ]
+}}
+只输出有价值的条目，宁少勿滥。只输出 JSON。"""
+
+
+def _knowledge_to_suggestions(items: list[dict]) -> list[dict]:
+    """将知识提炼结果转为现有的 suggestedContextUpdates 格式。"""
+    suggestions = []
+    for item in items:
+        item_type = item.get("type")
+        if item_type == "business_rule":
+            suggestions.append({
+                "type": "rule",
+                "scope": item.get("scope", "all"),
+                "text": item.get("text", ""),
+                "source": "agent",
+            })
+        elif item_type == "domain_term":
+            suggestions.append({
+                "type": "rule",
+                "scope": "all",
+                "text": f"[领域术语] {item.get('term', '')}: {item.get('definition', '')}",
+                "source": "agent",
+            })
+        elif item_type == "market_insight":
+            suggestions.append({
+                "type": "lesson",
+                "scope": item.get("scope", "pm"),
+                "title": item.get("title", "市场洞察"),
+                "background": item.get("evidence", ""),
+                "correctApproach": item.get("insight", ""),
+            })
+        elif item_type == "checklist_item":
+            suggestions.append({
+                "type": "rule",
+                "scope": item.get("scope", "all"),
+                "text": f"[检查清单:{item.get('category', '')}] {item.get('text', '')}",
+                "source": "agent",
+            })
+    return suggestions
+
+
+# ── 访谈 Prompt ──────────────────────────────────────────────────────────────
+
+_INTERVIEW_SYSTEM = """{persona}
+
+你正在为需求「{req_title}」做信息采集，后续要执行命令 [{commands}]。
+
+已有信息：
+- 需求描述：{req_summary}
+{context_block}
+{prev_outputs}
+{interview_history_block}
+
+请判断现有信息是否足够开始工作。以 JSON 输出：
+{{
+  "ready": true或false,
+  "message": "若 ready=false，写一段自然、友好的对话（像和同事聊天）。先简要说明你了解到了什么，再自然地追问需要补充的信息。不要用编号列表，用人话。若 ready=true，写一句'信息充分，开始执行'即可。"
+}}
+只输出 JSON。"""
+
+
+def _format_interview_history(history: list[dict]) -> str:
+    if not history:
+        return "（首次交流，尚无对话历史）"
+    lines = ["已有的对话记录："]
+    for item in history:
+        if item.get("type") == "question":
+            lines.append(f"  你说：{item.get('text', '')}")
+        elif item.get("type") == "answer":
+            lines.append(f"  用户回复：{item.get('text', '')}")
+    return "\n".join(lines)
+
+
+def _format_interview_as_context(history: list[dict]) -> str:
+    """Extract user answers as context."""
+    pairs = []
+    for item in history:
+        if item.get("type") == "answer" and item.get("text"):
+            pairs.append(item["text"])
+    return "\n".join(pairs) if pairs else ""
+
+
+async def execute_worker_with_review(
+    agent_name: str,
+    agent_role: str,
+    step_name: str,
+    commands: str,
+    req_title: str,
+    req_summary: str,
+    project_context: dict,
+    prev_artifact_summaries: str,
+    prompt_blocks: dict | None = None,
+    on_progress=None,
+    review_rounds: int = 3,
+    code_context: str = "",
+    interview_history: list[dict] | None = None,
+    max_interview_rounds: int = 3,
+) -> dict:
+    """对话式访谈 → 逐命令执行 → 审查 → 知识沉淀。"""
+
+    async def emit(tag: str, msg: str):
+        if on_progress:
+            await on_progress(tag, msg)
+
+    persona = _build_persona(agent_name, agent_role, prompt_blocks)
+    context_block = assemble_context(project_context, agent_name)
+    if code_context:
+        context_block += f"\n\n[CODE REPOSITORY]\n{code_context}"
+
+    # ━━ 阶段 0: 对话式访谈 ━━
+    cmd_codes = [c.strip() for c in (commands or "").replace("→", ",").split(",") if c.strip()]
+    intra_step_outputs = prev_artifact_summaries or ""
+
+    if cmd_codes:
+        history = list(interview_history or [])
+        history_block = _format_interview_history(history)
+
+        raw = await _chat(
+            messages=[{"role": "user", "content": _INTERVIEW_SYSTEM.format(
+                persona=persona, req_title=req_title, req_summary=req_summary or "（无）",
+                commands=", ".join(cmd_codes),
+                context_block=context_block, prev_outputs=intra_step_outputs or "（无）",
+                interview_history_block=history_block,
+            )}],
+            max_tokens=800,
+            json_mode=True,
+        )
+        try:
+            interview_data = json.loads(raw)
+        except json.JSONDecodeError:
+            interview_data = _extract_json(raw)
+
+        if not interview_data.get("ready", True):
+            question_count = len([h for h in history if h.get("type") == "question"])
+            if question_count < max_interview_rounds:
+                await emit("interview", "需要补充信息...")
+                return {
+                    "status": "need_input",
+                    "message": interview_data.get("message", "能否补充一些信息？"),
+                }
+
+        # ready → 将访谈收集到的信息追加到执行上下文
+        if history:
+            interview_context = _format_interview_as_context(history)
+            await emit("interview:done", "信息采集完成，开始执行...")
+            if interview_context:
+                intra_step_outputs += f"\n\n[用户补充信息]\n{interview_context}"
+
+    # ━━ 阶段 1: 逐命令执行 ━━
+    artifacts = []
+
+    for cmd_code in cmd_codes:
+        cmd_name = _CMD_NAMES.get(cmd_code, cmd_code)
+        await emit(f"exec:{cmd_code}", f"正在执行 {cmd_name}...")
+
+        art = await _execute_single_command(
+            cmd_code=cmd_code,
+            cmd_name=cmd_name,
+            persona=persona,
+            req_title=req_title,
+            req_summary=req_summary,
+            context_block=context_block,
+            prev_outputs=intra_step_outputs,
+            max_tokens=_resolve_max_tokens(cmd_code),
+        )
+
+        if art and art.get("content"):
+            art["_cmd_code"] = cmd_code
+            artifacts.append(art)
+            art_name = art.get("name", cmd_name)
+            await emit(f"done:{cmd_code}", f"完成 → 产出：{art_name}")
+            intra_step_outputs += f"\n\n[{cmd_name}·{art_name}]\n{art['content']}"
+
+    if not artifacts:
+        return {"artifacts": [], "suggestedContextUpdates": []}
+
+    # ━━ 阶段 2: 审查 ━━
+    REVIEWABLE_TYPES = {"document", "report", "plan", "design"}
+    reviews = [
+        ("adversarial", "对抗性审查", _REVIEW_ADVERSARIAL),
+        ("edge-case", "边界用例审查", _REVIEW_EDGE_CASE),
+        ("structural", "结构完整性审查", _REVIEW_STRUCTURAL),
+    ]
+
+    for i, art in enumerate(artifacts):
+        if art.get("type") not in REVIEWABLE_TYPES:
+            continue
+
+        cmd = art.get("_cmd_code", "")
+        art_review_rounds = _CMD_REVIEW_POLICY.get(cmd, 2)
+        if art_review_rounds == 0:
+            continue
+
+        current_content = art.get("content", "")
+        art_name = art.get("name", "产出物")
+
+        for review_id, review_name, review_template in reviews[:art_review_rounds]:
+            await emit(f"review:{review_id}", f"正在对「{art_name}」进行{review_name}...")
+
+            review_raw = await _chat(
+                messages=[{"role": "user", "content": review_template.format(document=current_content)}],
+                max_tokens=2000,
+                json_mode=True,
+            )
+            try:
+                review_data = json.loads(review_raw)
+            except json.JSONDecodeError:
+                review_data = _extract_json(review_raw)
+
+            await emit("findings", f"[{review_name}] {review_data.get('summary', '审查完成')}")
+
+            has_issues = (
+                review_data.get("issues")
+                or review_data.get("edgeCases")
+                or review_data.get("structuralIssues")
+            )
+            if not has_issues:
+                await emit("pass", f"「{art_name}」{review_name}通过")
+                continue
+
+            await emit("revise", f"正在根据{review_name}反馈修订「{art_name}」...")
+            revised = await _chat(
+                messages=[{"role": "user", "content": _REVISE_SYSTEM.format(
+                    persona=persona, original=current_content, review_feedback=review_raw,
+                )}],
+                max_tokens=_resolve_max_tokens(cmd),
+            )
+            current_content = revised
+
+        artifacts[i]["content"] = current_content
+        artifacts[i]["summary"] = f"[经 {art_review_rounds} 轮审查] " + art.get("summary", "")
+        await emit("output", f"「{art_name}」定稿完成（经 {art_review_rounds} 轮审查）")
+
+    # 清理内部字段
+    for art in artifacts:
+        art.pop("_cmd_code", None)
+
+    # ━━ 阶段 3: 知识沉淀（仅限特定角色） ━━
+    context_updates: list[dict] = []
+    if agent_role in _KNOWLEDGE_ENABLED_ROLES:
+        await emit("knowledge", "正在从产出物中提炼可复用知识...")
+
+        all_content = "\n\n---\n\n".join(
+            f"## {a.get('name', '')}\n{a.get('content', '')}" for a in artifacts
+        )
+        knowledge_raw = await _chat(
+            messages=[{"role": "user", "content": _KNOWLEDGE_EXTRACT.format(artifacts_content=all_content)}],
+            max_tokens=2000,
+            json_mode=True,
+        )
+        try:
+            knowledge_data = json.loads(knowledge_raw)
+        except json.JSONDecodeError:
+            knowledge_data = _extract_json(knowledge_raw)
+
+        knowledge_items = knowledge_data.get("items", [])
+        context_updates = _knowledge_to_suggestions(knowledge_items)
+
+        if knowledge_items:
+            type_counts: dict[str, int] = {}
+            for item in knowledge_items:
+                t = item.get("type", "unknown")
+                type_counts[t] = type_counts.get(t, 0) + 1
+            summary_parts = [f"{v} 条{k}" for k, v in type_counts.items()]
+            await emit("knowledge:done", f"提取了 {'、'.join(summary_parts)}")
+        else:
+            await emit("knowledge:done", "未发现需要沉淀的新知识")
+
+    return {
+        "artifacts": artifacts,
+        "suggestedContextUpdates": context_updates,
     }

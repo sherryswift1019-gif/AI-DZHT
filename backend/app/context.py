@@ -12,6 +12,7 @@ AGENT_SCOPE_MAP: dict[str, list[str]] = {
     "Quinn":     ["all", "qa"],
     "Barry":     ["all", "dev"],
     "Paige":     ["all", "dev"],
+    "Lena":      ["all", "pm", "design"],
     "Commander": ["all", "dev", "qa", "pm", "design", "architect"],
 }
 

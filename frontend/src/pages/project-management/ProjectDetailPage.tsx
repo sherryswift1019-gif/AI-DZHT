@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Trash2, Play, Copy, Check, Loader2, AlertTriangle, Pencil, Settings, Package, FileText, X } from 'lucide-react'
+import { Trash2, Loader2, AlertTriangle, Pencil, Settings, Package, FileText, X } from 'lucide-react'
 import { ProjectSettingsModal } from '@/components/project/ProjectSettingsModal'
+import { CommanderChatPanel } from '@/components/requirements/CommanderChatPanel'
 import { Badge } from '@/components/ui/Badge'
 import { WorkflowConfigModal } from '@/components/requirements/WorkflowConfigModal'
 import { mockMembers } from '@/mocks/data/projects'
@@ -16,7 +17,6 @@ import {
 } from '@/hooks/useRequirements'
 import { useProjectDetail } from '@/hooks/useProjects'
 import { useStepDetail } from '@/hooks/useStepDetail'
-import { useArtifactContent } from '@/hooks/useArtifactContent'
 import type {
   PipelineStep,
   PipelineStepStatus,
@@ -87,16 +87,14 @@ export function ProjectDetailPage() {
   const [stableDetail, setStableDetail] = useState<StepDetailResponse | undefined>(undefined)
   const [streamLines, setStreamLines] = useState<Array<{ time: string; text: string }>>([])
   const esRef = useRef<EventSource | null>(null)
-  const [launchReqId, setLaunchReqId] = useState<string | null>(null)
-  const [launchPromptText, setLaunchPromptText] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [launchCopied, setLaunchCopied] = useState(false)
   const [dismissModalStep, setDismissModalStep] = useState<PipelineStep | null>(null)
   const [dismissForm, setDismissForm] = useState({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
   // log streaming is handled inside <LogStream> component
   const [detailTab, setDetailTab] = useState<'flow' | 'artifacts'>('flow')
   const [viewingArtifact, setViewingArtifact] = useState<{ step: PipelineStep; art: StepArtifact } | null>(null)
-  const { mutate: fetchArtifactContent, data: artifactContent, isPending: isArtifactLoading, reset: resetArtifactContent } = useArtifactContent()
+  const [artifactContent, setArtifactContent] = useState<{ content: string; format: string } | null>(null)
+  const [isArtifactLoading, setIsArtifactLoading] = useState(false)
   const [form, setForm] = useState<NewReqForm>({
     title: '',
     summary: '',
@@ -124,6 +122,11 @@ export function ProjectDetailPage() {
 
   const runningCount = requirements.filter((r) => r.status === 'running').length
   const blockedCount = requirements.filter((r) => r.status === 'blocked').length
+  const queuedCount = requirements.filter((r) => r.status === 'queued').length
+  const doneCount = requirements.filter((r) => r.status === 'done').length
+  const pendingApprovalCount = requirements.filter((r) =>
+    r.pipeline.some((s) => s.status === 'pending_approval' || s.status === 'pending_advisory_approval'),
+  ).length
 
   const filteredReqs = useMemo(() => {
     if (reqFilter === 'all') return requirements
@@ -152,16 +155,29 @@ export function ProjectDetailPage() {
 
     setStableDetail(undefined)
 
-    // 获取一次步骤详情（summary / plan / artifacts / blockedReason）
-    fetchStepDetail({
-      agentName: activeNode.agentName,
-      agentRole: activeNode.role ?? '',
-      stepName: activeNode.name,
-      status: activeNode.status,
-      commands: activeNode.commands ?? '',
-      reqTitle: selectedReq.title,
-      reqSummary: selectedReq.summary,
-    })
+    // done 步骤且有真实产出物（来自 Commander 流水线执行）→ 直接使用，不调 LLM
+    if (activeNode.status === 'done' && activeNode.artifacts && activeNode.artifacts.length > 0) {
+      setStableDetail({
+        status: 'done',
+        summary: `${activeNode.agentName} 已完成「${activeNode.name}」`,
+        artifacts: activeNode.artifacts.map((a) => ({
+          name: a.name,
+          type: a.type as StepArtifact['type'],
+          summary: a.summary,
+        })),
+      })
+    } else {
+      // 其他状态：调 LLM 获取步骤详情
+      fetchStepDetail({
+        agentName: activeNode.agentName,
+        agentRole: activeNode.role ?? '',
+        stepName: activeNode.name,
+        status: activeNode.status,
+        commands: activeNode.commands ?? '',
+        reqTitle: selectedReq.title,
+        reqSummary: selectedReq.summary,
+      })
+    }
 
     // running 状态：打开 SSE 获取真实流式日志
     if (activeNode.status === 'running') {
@@ -187,8 +203,11 @@ export function ProjectDetailPage() {
   }, [activeNode?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!viewingArtifact || !selectedReq) { resetArtifactContent(); return }
-    fetchArtifactContent({
+    if (!viewingArtifact || !selectedReq) { setArtifactContent(null); return }
+    let cancelled = false
+    setArtifactContent(null)
+    setIsArtifactLoading(true)
+    const payload = {
       agentName: viewingArtifact.step.agentName,
       agentRole: viewingArtifact.step.role ?? '',
       artifactName: viewingArtifact.art.name,
@@ -198,7 +217,16 @@ export function ProjectDetailPage() {
       reqSummary: selectedReq.summary,
       reqId: selectedReq.id,
       stepId: viewingArtifact.step.id,
+    }
+    fetch('/api/v1/artifacts/content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     })
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled) { setArtifactContent(data); setIsArtifactLoading(false) } })
+      .catch(() => { if (!cancelled) { setArtifactContent(null); setIsArtifactLoading(false) } })
+    return () => { cancelled = true }
   }, [viewingArtifact]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -270,15 +298,6 @@ export function ProjectDetailPage() {
     )
   }
 
-  const startWorkflow = (reqId: string) => {
-    patchMutation.mutate({
-      projectId: project.id,
-      reqId,
-      status: 'running',
-    })
-    setLaunchReqId(null)
-  }
-
   const handleApproveStep = (reqId: string, stepId: string) => {
     approveStepMutation.mutate({ projectId: project.id, reqId, stepId })
   }
@@ -300,7 +319,7 @@ export function ProjectDetailPage() {
     <div className="flex min-h-screen flex-col bg-[var(--bg-base)]">
       {/* ── Page Hero Header ── */}
       <div className="border-b border-[var(--border)] bg-[var(--bg-base)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-6">
+        <div className="mx-auto w-full max-w-[1600px] px-6 py-6">
           {/* Identity row */}
           <div className="flex items-start justify-between gap-6">
             <div className="flex items-start gap-4 min-w-0">
@@ -340,8 +359,11 @@ export function ProjectDetailPage() {
 
             {/* Right: req stats + settings */}
             <div className="flex shrink-0 items-center gap-3">
+              <StatChip label="待执行" value={queuedCount} color="var(--text-3)" />
               <StatChip label="执行中" value={runningCount} color="var(--blue)" />
-              <StatChip label="阻塞" value={blockedCount} color="var(--orange)" />
+              <StatChip label="待审批" value={pendingApprovalCount} color="#ff9f0a" />
+              <StatChip label="阻塞" value={blockedCount} color="var(--danger)" />
+              <StatChip label="已完成" value={doneCount} color="var(--success)" />
               <StatChip label="总需求" value={requirements.length} color="var(--text-2)" />
               <button
                 onClick={() => setSettingsOpen(true)}
@@ -363,7 +385,7 @@ export function ProjectDetailPage() {
         />
       )}
 
-      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-6 py-6">
+      <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-6 py-6">
         {true && (
           <section className="flex gap-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-panel)]" style={{ minHeight: '62vh' }}>
             {/* ── Left: req list ── */}
@@ -414,6 +436,9 @@ export function ProjectDetailPage() {
                   const activeStep =
                     req.pipeline.find((s) => s.status === 'running' || s.status === 'blocked') ??
                     req.stories.flatMap((st) => st.pipeline).find((s) => s.status === 'running' || s.status === 'blocked')
+                  const pendingApprovalStep = req.pipeline.find(
+                    (s) => s.status === 'pending_approval' || s.status === 'pending_advisory_approval',
+                  )
                   return (
                     <button
                       key={req.id}
@@ -463,22 +488,48 @@ export function ProjectDetailPage() {
                       <div className="flex items-center justify-between text-[10px]">
                         <span
                           className={cn(
-                            isBlocked ? 'text-[#f85149]' : 'text-[var(--text-3)]',
+                            pendingApprovalStep ? 'text-[#ff9f0a]'
+                              : isBlocked ? 'text-[#f85149]'
+                              : 'text-[var(--text-3)]',
                           )}
                         >
-                          {activeStep
-                            ? `${activeStep.agentName} ${isBlocked ? '⚠ 阻塞' : '执行中'}`
-                            : req.status === 'done'
-                              ? '✓ 已完成'
-                              : '待启动'}
+                          {pendingApprovalStep
+                            ? `🟠 ${pendingApprovalStep.agentName} 待审批`
+                            : activeStep
+                              ? `${activeStep.agentName} ${isBlocked ? '⚠ 阻塞' : '执行中'}`
+                              : req.status === 'done'
+                                ? '✓ 已完成'
+                                : '待启动'}
                         </span>
-                        <span className="text-[var(--text-3)]">{activeStep?.updatedAt ?? '--'}</span>
+                        <span className="text-[var(--text-3)]">{pendingApprovalStep?.updatedAt ?? activeStep?.updatedAt ?? '--'}</span>
                       </div>
                     </button>
                   )
                 })}
               </div>
             </div>
+
+            {/* ── Middle: Commander Chat Panel ── */}
+            {selectedReq && (
+              <div className="flex w-[360px] shrink-0 flex-col border-r border-[var(--border)]">
+                <CommanderChatPanel
+                  projectId={project.id}
+                  requirement={selectedReq}
+                  onApproveStep={handleApproveStep}
+                  onDismissAdvisory={(step) => {
+                    setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
+                    setDismissModalStep(step)
+                  }}
+                  onViewArtifact={(stepId, art) => {
+                    const step = selectedReq.pipeline.find((s) => s.id === stepId)
+                    if (step) {
+                      setViewingArtifact({ step, art: { name: art.name, type: art.type as StepArtifact['type'], summary: art.summary } })
+                    }
+                  }}
+                  isApproving={approveStepMutation.isPending}
+                />
+              </div>
+            )}
 
             {/* ── Right: workflow detail panel ── */}
             <div className="flex flex-1 flex-col overflow-hidden">
@@ -529,18 +580,6 @@ export function ProjectDetailPage() {
                         </div>
                         {/* ── 操作按钮组 ── */}
                         <div className="mt-0.5 flex shrink-0 items-center gap-1">
-                          {selectedReq.status === 'queued' && selectedReq.pipeline.length > 0 && (
-                            <button
-                              onClick={() => {
-                                setLaunchPromptText(buildLaunchPrompt(selectedReq))
-                                setLaunchReqId(selectedReq.id)
-                              }}
-                              className="rounded border border-[rgba(10,132,255,0.3)] bg-[var(--accent-sub)] p-1 text-[var(--accent)]"
-                              title="启动流程"
-                            >
-                              <Play size={12} fill="currentColor" />
-                            </button>
-                          )}
                           <button
                             onClick={() => {
                               setEditForm({
@@ -599,57 +638,6 @@ export function ProjectDetailPage() {
                   {/* Flowchart body */}
                   {detailTab === 'flow' && (
                   <div className="flex-1 overflow-auto p-5">
-                    {/* ── 审批 Banner ── */}
-                    {(() => {
-                      const pendingApproval = selectedReq.pipeline.find((s) => s.status === 'pending_approval')
-                      const pendingAdvisory = selectedReq.pipeline.find((s) => s.status === 'pending_advisory_approval')
-                      if (!pendingApproval && !pendingAdvisory) return null
-                      const step = (pendingApproval ?? pendingAdvisory)!
-                      const isMandatory = step.status === 'pending_approval'
-                      return (
-                        <div className={cn(
-                          'mb-4 rounded-xl border px-4 py-3 space-y-2',
-                          isMandatory
-                            ? 'border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.07)]'
-                            : 'border-[rgba(255,214,10,0.35)] bg-[rgba(255,214,10,0.05)]',
-                        )}>
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <p className={cn('text-[12px] font-semibold', isMandatory ? 'text-[#ff9f0a]' : 'text-[#ffd60a]')}>
-                                {isMandatory ? '强制审批：需要人工批准后继续' : '建议性审批：指挥官请求确认'}
-                              </p>
-                              <p className="text-[11px] text-[var(--text-2)] mt-0.5">
-                                步骤：{step.agentName} · {step.name}
-                              </p>
-                              {!isMandatory && step.advisoryConcern && (
-                                <p className="text-[11px] text-[var(--text-3)] mt-1">顾虑：{step.advisoryConcern}</p>
-                              )}
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              {!isMandatory && (
-                                <button
-                                  onClick={() => {
-                                    setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
-                                    setDismissModalStep(step)
-                                  }}
-                                  className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-semibold text-[var(--text-2)] hover:text-[var(--text-1)]"
-                                >
-                                  无需审批
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleApproveStep(selectedReq.id, step.id)}
-                                disabled={approveStepMutation.isPending}
-                                className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                              >
-                                {approveStepMutation.isPending ? <Loader2 size={10} className="animate-spin" /> : null}
-                                批准并继续
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
                     {/* ── Phase 1: req-level sequential nodes ── */}
                     {selectedReq.pipeline.length > 0 && (
                       <>
@@ -661,6 +649,16 @@ export function ProjectDetailPage() {
                                 step={step}
                                 isActive={activeNode?.id === step.id}
                                 onClick={() => setActiveNode(activeNode?.id === step.id ? null : step)}
+                                onToggleApproval={() => {
+                                  const newPipeline = selectedReq.pipeline.map((s) =>
+                                    s.id === step.id ? { ...s, requiresApproval: !s.requiresApproval } : s,
+                                  )
+                                  patchMutation.mutate({
+                                    projectId: id!,
+                                    reqId: selectedReq.id,
+                                    pipeline: newPipeline,
+                                  })
+                                }}
                               />
                               {idx < selectedReq.pipeline.length - 1 && (
                                 <NodeArrow done={step.status === 'done'} />
@@ -738,7 +736,10 @@ export function ProjectDetailPage() {
                           )
                         }
                         return allSteps.map((step) => {
-                          const arts = AGENT_ARTIFACTS_MAP[step.agentName] ?? []
+                          // 优先使用 pipeline step 上的真实产出物（来自 Commander 执行），没有才 fallback 到静态 mock
+                          const arts = (step.artifacts && step.artifacts.length > 0)
+                            ? step.artifacts.map((a) => ({ name: a.name, type: a.type as StepArtifact['type'] }))
+                            : (AGENT_ARTIFACTS_MAP[step.agentName] ?? [])
                           if (arts.length === 0) return null
                           return (
                             <div key={step.id}>
@@ -1158,109 +1159,6 @@ export function ProjectDetailPage() {
         </div>
       )}
 
-      {/* ── 启动流程 Modal ── */}
-      {launchReqId && (() => {
-        const req = requirements.find((r) => r.id === launchReqId)
-        if (!req) return null
-        const firstStep = req.pipeline[0]
-        return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-            onClick={() => setLaunchReqId(null)}
-          >
-            <div
-              className="w-full max-w-[520px] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
-                <div>
-                  <p className="text-[11px] text-[var(--text-3)]">准备启动 Agent 工作流</p>
-                  <h3 className="mt-0.5 max-w-[380px] truncate text-sm font-semibold text-[var(--text-1)]">
-                    {req.title}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setLaunchReqId(null)}
-                  className="text-[18px] leading-none text-[var(--text-3)] hover:text-[var(--text-1)]"
-                >×</button>
-              </div>
-
-              {/* Body */}
-              <div className="space-y-4 px-5 py-4">
-                {/* 第一个 Agent 信息 */}
-                <div className="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] px-4 py-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-sub)] text-[14px] font-bold text-[var(--accent)]">
-                    1
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">第一步 Agent</p>
-                    <p className="mt-0.5 text-sm font-bold text-[var(--text-1)]">
-                      {firstStep.agentName}
-                      {firstStep.role && <span className="ml-1.5 text-xs font-normal text-[var(--text-3)]">· {firstStep.role}</span>}
-                    </p>
-                    {firstStep.commands && (
-                      <p className="mt-1 font-mono text-[10px] text-[#58a6ff]">{firstStep.commands}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* 启动 Prompt */}
-                <div>
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">
-                    向 Agent 发送以下消息以启动工作
-                  </p>
-                  <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-base)]">
-                    <textarea
-                      value={launchPromptText}
-                      onChange={(e) => setLaunchPromptText(e.target.value)}
-                      rows={7}
-                      className="w-full resize-y rounded-xl bg-transparent px-4 py-3 font-mono text-[11px] leading-relaxed text-[var(--text-2)] outline-none focus:ring-1 focus:ring-[var(--accent)]"
-                    />
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(launchPromptText).then(() => {
-                          setLaunchCopied(true)
-                          setTimeout(() => setLaunchCopied(false), 2000)
-                        })
-                      }}
-                      className={cn(
-                        'absolute right-2 top-2 flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-semibold transition-all',
-                        launchCopied
-                          ? 'border-[rgba(52,199,89,0.4)] bg-[var(--success-sub)] text-[var(--success)]'
-                          : 'border-[var(--border)] bg-[var(--bg-panel)] text-[var(--text-2)] hover:border-[var(--accent)] hover:text-[var(--accent)]',
-                      )}
-                    >
-                      {launchCopied ? <Check size={10} /> : <Copy size={10} />}
-                      {launchCopied ? '已复制' : '复制'}
-                    </button>
-                  </div>
-                  <p className="mt-1.5 text-[10px] text-[var(--text-3)]">
-                    复制后，在 Claude Code 中打开对应 Agent 并粘贴发送即可。
-                  </p>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] px-5 py-3">
-                <button
-                  onClick={() => setLaunchReqId(null)}
-                  className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-2)] hover:text-[var(--text-1)]"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => startWorkflow(launchReqId)}
-                  className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 active:scale-[0.98] transition-all"
-                >
-                  <Play size={10} fill="currentColor" />
-                  确认启动
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
 
       {/* ── 产出物内容 Modal ── */}
       {viewingArtifact && (
@@ -1415,7 +1313,9 @@ function InputField({ label, required, children }: { label: string; required?: b
 
 // ── Flow node components ───────────────────────────────────────────────────
 
-function FlowNode({ step, isActive, onClick }: { step: PipelineStep; isActive: boolean; onClick: () => void }) {
+function FlowNode({ step, isActive, onClick, onToggleApproval }: {
+  step: PipelineStep; isActive: boolean; onClick: () => void; onToggleApproval?: () => void
+}) {
   const cls =
     step.status === 'done'                     ? 'border-[#30363d] bg-[#0d1117]' :
     step.status === 'running'                  ? 'border-[rgba(88,166,255,0.55)] bg-[rgba(88,166,255,0.06)] shadow-[0_0_12px_rgba(88,166,255,0.18)]' :
@@ -1453,6 +1353,26 @@ function FlowNode({ step, isActive, onClick }: { step: PipelineStep; isActive: b
       {/* Commands */}
       {step.commands && (
         <span className="mt-2 font-mono text-[9px] text-[#58a6ff] opacity-80">{step.commands}</span>
+      )}
+      {/* Approval toggle — queued 状态可切换 */}
+      {onToggleApproval && step.status === 'queued' && (
+        <span
+          onClick={(e) => { e.stopPropagation(); onToggleApproval() }}
+          className={cn(
+            'mt-2 self-start cursor-pointer rounded border px-1.5 py-[2px] text-[8px] font-semibold leading-none transition-all',
+            step.requiresApproval
+              ? 'border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.1)] text-[#ff9f0a]'
+              : 'border-[var(--border)] bg-transparent text-[var(--text-3)]',
+          )}
+        >
+          {step.requiresApproval ? '需审批' : '自动'}
+        </span>
+      )}
+      {/* 非 queued 状态但标记了审批 — 只读标签 */}
+      {step.status !== 'queued' && step.requiresApproval && (
+        <span className="mt-2 self-start rounded border border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.1)] px-1.5 py-[2px] text-[8px] font-semibold leading-none text-[#ff9f0a]">
+          需审批
+        </span>
       )}
     </button>
   )
@@ -1537,20 +1457,6 @@ function statusBadge(status: RequirementStatus): 'blue' | 'orange' | 'gray' | 'g
   if (status === 'blocked') return 'orange'
   if (status === 'done') return 'green'
   return 'gray'
-}
-
-function buildLaunchPrompt(req: Requirement): string {
-  const firstStep = req.pipeline[0]
-  if (!firstStep) return ''
-  const cmds = firstStep.enabledCommands?.join(' → ') ?? firstStep.commands ?? ''
-  const cmdLine = cmds ? `\n请按顺序执行以下命令：${cmds}` : ''
-  return `你好，我需要你扮演 ${firstStep.agentName}${firstStep.role ? `（${firstStep.role}）` : ''} 来处理以下需求。
-
-需求标题：${req.title}
-需求摘要：${req.summary}
-${cmdLine}
-
-请从第一个命令开始，分析需求背景，并告知我你的分析结果与下一步计划。`
 }
 
 function memberName(memberId: string) {

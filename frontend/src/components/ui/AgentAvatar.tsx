@@ -18,6 +18,7 @@ const roleConfig: Record<AgentRole, { emoji: string; gradient: string }> = {
   qa:         { emoji: '🧪', gradient: 'from-yellow-900 to-yellow-600' },
   quickdev:   { emoji: '🚀', gradient: 'from-green-900 to-green-600' },
   techwriter: { emoji: '📚', gradient: 'from-slate-800 to-slate-600' },
+  reqLead:    { emoji: '📝', gradient: 'from-indigo-900 to-indigo-600' },
 }
 
 const sizeStyles = {

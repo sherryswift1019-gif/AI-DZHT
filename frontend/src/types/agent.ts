@@ -10,6 +10,7 @@ export type AgentRole =
   | 'qa'          // Quinn — QA 工程师
   | 'quickdev'    // Barry — 快速开发专家
   | 'techwriter'  // Paige — 技术文档专家
+  | 'reqLead'     // Lena  — 需求总监
 
 export type AgentStatus = 'active' | 'idle' | 'running' | 'disabled' | 'draft'
 

@@ -158,7 +158,12 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
           },
         }),
       })
-      if (!res.ok) throw new Error(await res.text())
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        const msg = err?.detail || 'AI 生成上下文失败，请检查大模型配置'
+        alert(msg)
+        return
+      }
       const data = await res.json()
       setContext((p) => ({
         ...p,

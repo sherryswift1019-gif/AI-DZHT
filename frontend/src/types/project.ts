@@ -13,6 +13,7 @@ export type PipelineStepStatus =
   | 'done'
   | 'pending_approval'          // 强制审批：必须人工批准后继续
   | 'pending_advisory_approval' // 指挥官建议审批：可批准或标记"无需审批"
+  | 'pending_input'             // 等待用户输入（对话式访谈）
 
 export type RuleScope = 'all' | 'dev' | 'qa' | 'pm' | 'design' | 'architect'
 
@@ -108,6 +109,7 @@ export interface PipelineStep {
   enabledCommands?: string[]
   requiresApproval?: boolean    // 配置阶段设定的强制审批标记
   advisoryConcern?: string      // 指挥官建议性审批时的顾虑说明
+  artifacts?: Array<{ name: string; type: string; summary: string }>  // Commander 执行后的真实产出物
 }
 
 export type StoryStatus = 'queued' | 'running' | 'blocked' | 'done'
@@ -216,7 +218,7 @@ export interface WorkflowSuggestRequest {
 }
 
 export interface WorkflowSuggestResponse {
-  recommendedTemplateId: 'full' | 'quick' | 'bugfix' | 'custom'
+  recommendedTemplateId: 'full' | 'quick' | 'bugfix' | 'requirements' | 'custom'
   reasoning: string
   suggestedAgentRoles: AgentRole[]
   confidence: 'high' | 'medium' | 'low'
@@ -244,4 +246,36 @@ export interface ContextSuggestion {
   title?: string
   background?: string
   correctApproach?: string
+}
+
+
+// ── Commander Events ───────────────────────────────────────────────────────
+
+export type CommanderEventType =
+  | 'commander_greeting'
+  | 'user_start'
+  | 'commander_thinking'
+  | 'agent_invoke'
+  | 'agent_working'
+  | 'agent_done'
+  | 'approval_request'
+  | 'approval_response'
+  | 'pipeline_complete'
+  | 'pipeline_blocked'
+  | 'user_input_request'
+  | 'user_input_response'
+  | 'system_info'
+
+export type CommanderEventRole = 'commander' | 'agent' | 'user' | 'system'
+
+export interface CommanderEvent {
+  id: string
+  reqId: string
+  seq: number
+  eventType: CommanderEventType
+  role: CommanderEventRole
+  agentName: string
+  content: string
+  metadata: Record<string, unknown>
+  createdAt: number
 }

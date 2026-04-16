@@ -13,18 +13,24 @@ from datetime import datetime
 from typing import Any
 
 from .context import assemble_context
-from .llm import execute_worker_agent, chat_with_tools
+from .llm import execute_worker_agent, execute_worker_with_review, chat_with_tools
+from .workspace import WorkspaceManager
 from .storage import (
     delete_commander_state,
     delete_pending_suggestion,
     get_artifacts,
     get_commander_state,
+    get_interview_history,
     get_project,
     get_requirement,
+    get_agent_by_name,
     save_artifact,
     save_commander_state,
+    save_commander_event,
+    save_interview_turn,
     save_pending_suggestion,
     save_requirement,
+    sync_project_status,
 )
 
 # ── 并发保护 ──────────────────────────────────────────────────────────────────
@@ -184,14 +190,40 @@ async def _commander_loop(
             "tool_call_id": saved["pendingToolCallId"],
             "content": json.dumps(approval_result or {"approved": True}, ensure_ascii=False),
         })
+        save_commander_event(
+            req_id, "commander_thinking", "commander", "Commander",
+            "审批已通过，恢复执行流水线...",
+        )
     else:
         # 全新启动
         messages = [
             {"role": "system", "content": _build_commander_system(req, project)},
             {"role": "user", "content": "请开始执行流水线。"},
         ]
+        save_commander_event(
+            req_id, "commander_thinking", "commander", "Commander",
+            "正在分析流水线，准备开始执行...",
+        )
 
-    while True:
+        # 创建需求分支
+        ws = _get_workspace(project_id, project)
+        if ws:
+            try:
+                branch = ws.create_branch(req["code"])
+                save_commander_event(
+                    req_id, "system_info", "system", "Commander",
+                    f"已创建工作分支 {branch}",
+                    {"branch": branch},
+                )
+            except Exception:
+                pass
+
+    max_iterations = len(req["pipeline"]) * 3 + 10  # 安全上限
+    iteration = 0
+    no_tool_streak = 0
+
+    while iteration < max_iterations:
+        iteration += 1
         msg_dict = await chat_with_tools(
             messages=messages,
             tools=COMMANDER_TOOLS,
@@ -199,7 +231,29 @@ async def _commander_loop(
         )
         messages.append(msg_dict)
 
+        # 如果 Commander 有推理文本，发射事件
+        content_text = msg_dict.get("content", "")
+        if content_text and isinstance(content_text, str) and content_text.strip():
+            save_commander_event(
+                req_id, "commander_thinking", "commander", "Commander",
+                content_text.strip(),
+            )
+
         tool_calls = msg_dict.get("tool_calls") or []
+
+        if not tool_calls:
+            no_tool_streak += 1
+            if no_tool_streak >= 2:
+                # LLM 连续两次不调工具，标记阻塞
+                _mark_pipeline_blocked(req_id, "指挥官未能正确调用工具，流水线中止")
+                save_commander_event(
+                    req_id, "pipeline_blocked", "system", "Commander",
+                    "指挥官未能正确调用工具，流水线已中止。请检查 LLM 配置。",
+                )
+                break
+            continue
+
+        no_tool_streak = 0
         pause = False
 
         for tc_raw in tool_calls:
@@ -236,16 +290,80 @@ async def _dispatch(
     args = json.loads(tc.function.arguments)
 
     if name == "invoke_agent":
+        # 获取步骤信息用于事件
+        req = get_requirement(req_id)
+        step = next((s for s in req["pipeline"] if s["id"] == args["step_id"]), None)
+        step_name = step["name"] if step else args["step_id"]
+        agent_name = step["agentName"] if step else "Agent"
+        save_commander_event(
+            req_id, "agent_invoke", "commander", "Commander",
+            f"正在调用 {agent_name} 执行「{step_name}」...",
+            {"step_id": args["step_id"], "agent_name": agent_name},
+        )
         result = await _execute_worker(req_id, project_id, args["step_id"])
+
+        # ★ 代码级拦截：Worker 需要用户输入，直接暂停
+        if result.get("status") == "need_input":
+            req = get_requirement(req_id)
+            step = next((s for s in req["pipeline"] if s["id"] == args["step_id"]), None)
+            a_name = step["agentName"] if step else "Agent"
+            _update_step(req_id, args["step_id"], "pending_input")
+
+            save_interview_turn(req_id, args["step_id"], "question",
+                                {"agent": a_name, "text": result.get("message", "")})
+            save_commander_event(
+                req_id, "user_input_request", "agent", a_name,
+                result.get("message", "需要补充信息"),
+                {"step_id": args["step_id"], "type": "interview"},
+            )
+
+            return {
+                "status": "awaiting_user_input",
+                "step_id": args["step_id"],
+                "message": f"用户补充了信息。请再次调用 invoke_agent(step_id='{args['step_id']}') 继续执行该步骤。",
+            }, True
+
+        # ★ 硬性审批检查：步骤标记了 requiresApproval 时，自动暂停
+        req = get_requirement(req_id)  # 重新读取（_execute_worker 会更新状态）
+        step = next((s for s in req["pipeline"] if s["id"] == args["step_id"]), None)
+        if step and step.get("requiresApproval"):
+            # 构建产出物摘要供审批人查看
+            art_meta = step.get("artifacts", [])
+            art_lines = "\n".join(
+                f"  - {a['name']}（{a['type']}）：{a.get('summary', '')}"
+                for a in art_meta
+            ) if art_meta else "  （无产出物）"
+            summary = (
+                f"{agent_name} 已完成「{step_name}」，产出如下：\n{art_lines}\n\n"
+                f"请审阅产出物后决定是否批准继续。"
+            )
+            _update_step(req_id, args["step_id"], "pending_approval")
+            save_commander_event(
+                req_id, "approval_request", "commander", "Commander",
+                summary,
+                {"step_id": args["step_id"], "type": "mandatory", "artifacts": art_meta},
+            )
+            return result, True  # 暂停流水线等待审批
+
         return result, False
 
     elif name == "request_approval":
         _update_step(req_id, args["step_id"], "pending_approval")
+        save_commander_event(
+            req_id, "approval_request", "commander", "Commander",
+            args.get("summary", "需要人工审批"),
+            {"step_id": args["step_id"], "type": "mandatory"},
+        )
         return {"status": "awaiting_approval", "step_id": args["step_id"]}, True
 
     elif name == "request_advisory_approval":
         _update_step(req_id, args["step_id"], "pending_advisory_approval",
                      extra={"advisoryConcern": args["concern"]})
+        save_commander_event(
+            req_id, "approval_request", "commander", "Commander",
+            args.get("concern", "建议进行人工确认"),
+            {"step_id": args["step_id"], "type": "advisory"},
+        )
         return {
             "status": "awaiting_advisory_approval",
             "step_id": args["step_id"],
@@ -254,16 +372,39 @@ async def _dispatch(
 
     elif name == "complete_pipeline":
         _mark_pipeline_done(req_id)
+        save_commander_event(
+            req_id, "pipeline_complete", "system", "Commander",
+            "所有步骤已完成，流水线执行结束。",
+        )
         return {"status": "complete"}, True
 
     elif name == "block_pipeline":
         _mark_pipeline_blocked(req_id, args.get("reason", "未知错误"))
+        save_commander_event(
+            req_id, "pipeline_blocked", "system", "Commander",
+            f"流水线遇到阻塞：{args.get('reason', '未知错误')}",
+            {"reason": args.get("reason", "未知错误")},
+        )
         return {"status": "blocked", "reason": args.get("reason")}, True
 
     return {"status": "unknown_tool", "name": name}, False
 
 
 # ── Worker 执行 ───────────────────────────────────────────────────────────────
+
+def _get_workspace(project_id: str, project: dict) -> WorkspaceManager | None:
+    """Get Git workspace for a project (if repository is configured)."""
+    settings = project.get("settings") or {}
+    repo_url = settings.get("repository")
+    if not repo_url:
+        return None
+    git_config = settings.get("gitConfig", {})
+    ws = WorkspaceManager(project_id, repo_url, git_config)
+    try:
+        return ws if ws.ensure_repo() else None
+    except Exception:
+        return None
+
 
 async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
     req = get_requirement(req_id)
@@ -275,18 +416,53 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
     prev_summaries = _build_prev_summaries(req_id, req["pipeline"], step_id)
     _update_step(req_id, step_id, "running")
 
-    result = await execute_worker_agent(
+    # 从 DB 查找 Agent 记录，提取 promptBlocks
+    agent_record = get_agent_by_name(step["agentName"])
+    prompt_blocks = agent_record.get("promptBlocks") if agent_record else None
+
+    # Git 工作空间（若项目配置了仓库）
+    ws = _get_workspace(project_id, project)
+
+    # 加载访谈历史（跨暂停累积）
+    interview_hist = get_interview_history(req_id, step_id)
+
+    if not interview_hist:
+        save_commander_event(
+            req_id, "agent_working", "agent", step["agentName"],
+            f"{step['agentName']} 开始工作...",
+            {"step_id": step_id, "step_name": step["name"]},
+        )
+
+    # 进度回调 → Commander 面板实时日志
+    async def on_progress(tag: str, message: str):
+        save_commander_event(
+            req_id, "agent_working", "agent", step["agentName"],
+            f"[{tag}] {message}",
+            {"step_id": step_id, "phase": tag},
+        )
+
+    agent_role = step.get("agentRole", step.get("role", ""))
+
+    result = await execute_worker_with_review(
         agent_name=step["agentName"],
-        agent_role=step.get("role", ""),
+        agent_role=agent_role,
         step_name=step["name"],
         commands=step.get("commands", ""),
         req_title=req["title"],
         req_summary=req.get("summary", ""),
         project_context=project.get("context", {}),
         prev_artifact_summaries=prev_summaries,
+        prompt_blocks=prompt_blocks,
+        on_progress=on_progress,
+        code_context=ws.build_code_context(agent_role) if ws else "",
+        interview_history=interview_hist,
     )
 
-    # 持久化产出物
+    # ★ 访谈阶段：Worker 需要用户输入，直接返回给 _dispatch 做拦截
+    if result.get("status") == "need_input":
+        return result
+
+    # 持久化产出物（DB + Git 文件）
     artifacts = result.get("artifacts", [])
     for art in artifacts:
         save_artifact(
@@ -298,6 +474,20 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
             content=art.get("content", ""),
             fmt="markdown",
         )
+        # 写入 Git 仓库
+        if ws:
+            try:
+                file_path = ws.write_artifact(req["code"], agent_role, art)
+                art["filePath"] = file_path
+            except Exception:
+                pass  # Git 写入失败不阻塞流水线
+
+    # Git commit（如果有产出物且有工作空间）
+    if ws and artifacts:
+        try:
+            ws.commit(f"[{step['agentName']}] {step['name']} 完成")
+        except Exception:
+            pass
 
     # Path B：存储 Agent 建议的上下文更新，待人工确认
     for suggestion in result.get("suggestedContextUpdates", []):
@@ -311,6 +501,14 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
     ]
     _update_step(req_id, step_id, "done", extra={"artifacts": art_meta})
 
+    # 发射 agent_done 事件
+    art_summary = "、".join(a.get("name", "产出物") for a in artifacts) if artifacts else "无产出物"
+    save_commander_event(
+        req_id, "agent_done", "agent", step["agentName"],
+        f"{step['agentName']} 完成了「{step['name']}」，产出：{art_summary}",
+        {"step_id": step_id, "artifacts": art_meta},
+    )
+
     # 只返回摘要给 Commander（控制 token）
     return {
         "step_id": step_id,
@@ -320,14 +518,29 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
 
 
 def _build_prev_summaries(req_id: str, pipeline: list, current_step_id: str) -> str:
+    # 找到当前步骤的 Agent 名称
+    current_agent = None
+    for s in pipeline:
+        if s["id"] == current_step_id:
+            current_agent = s.get("agentName")
+            break
+
     lines = []
     for s in pipeline:
         if s["id"] == current_step_id:
             break
         if s.get("status") == "done":
             for a in get_artifacts(req_id, s["id"]):
-                lines.append(f"[{s['name']}·{a['name']}] {a['summary']}")
-    return "\n".join(lines) if lines else "（无前序产出物）"
+                if s.get("agentName") == current_agent:
+                    # 同 Agent 连续步骤：传全文（截断保护 3000 字符）
+                    content = a.get("content") or a["summary"]
+                    if len(content) > 3000:
+                        content = content[:3000] + "\n...(已截断)"
+                    lines.append(f"[{s['name']}·{a['name']}]\n{content}")
+                else:
+                    # 不同 Agent：仍传摘要
+                    lines.append(f"[{s['name']}·{a['name']}] {a['summary']}")
+    return "\n\n".join(lines) if lines else "（无前序产出物）"
 
 
 # ── DB 状态更新辅助 ───────────────────────────────────────────────────────────
@@ -356,6 +569,26 @@ def _mark_pipeline_done(req_id: str) -> None:
             s["updatedAt"] = now
     req["status"] = "done"
     save_requirement(req_id, req)
+    sync_project_status(req["projectId"])
+
+    # 推送 Git 分支
+    project = get_project(req["projectId"])
+    ws = _get_workspace(req["projectId"], project)
+    if ws:
+        branch = f"{ws.branch_prefix}{req['code']}"
+        try:
+            ws.push(branch)
+            save_commander_event(
+                req_id, "system_info", "system", "Commander",
+                f"已推送分支 {branch} 到远程仓库",
+                {"branch": branch},
+            )
+        except Exception as e:
+            save_commander_event(
+                req_id, "system_info", "system", "Commander",
+                f"推送分支失败：{e}",
+                {"error": str(e)},
+            )
 
 
 def _mark_pipeline_blocked(req_id: str, reason: str) -> None:
@@ -368,6 +601,7 @@ def _mark_pipeline_blocked(req_id: str, reason: str) -> None:
             s["blockedReason"] = reason
     req["status"] = "blocked"
     save_requirement(req_id, req)
+    sync_project_status(req["projectId"])
 
 
 def _mark_current_running_step_blocked(req_id: str, reason: str) -> None:

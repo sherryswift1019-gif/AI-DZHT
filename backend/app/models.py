@@ -59,8 +59,14 @@ class EnvLink(BaseModel):
     url: str
 
 
+class GitConfig(BaseModel):
+    defaultBranch: str = "main"
+    branchPrefix: str = "req/"
+
+
 class ProjectSettings(BaseModel):
     repository: Optional[str] = None
+    gitConfig: GitConfig = GitConfig()
     environments: list[EnvLink] = []
     context: ProjectContext = ProjectContext()
 
@@ -130,6 +136,12 @@ class GenerateContextResponse(BaseModel):
 
 # ── Requirements CRUD ─────────────────────────────────────────────────────────
 
+class PipelineStepArtifact(BaseModel):
+    name: str
+    type: str
+    summary: str = ""
+
+
 class PipelineStepModel(BaseModel):
     id: str
     name: str
@@ -142,6 +154,7 @@ class PipelineStepModel(BaseModel):
     enabledCommands: Optional[list[str]] = None
     requiresApproval: Optional[bool] = None
     advisoryConcern: Optional[str] = None
+    artifacts: Optional[list[PipelineStepArtifact]] = None
 
 
 class StoryModel(BaseModel):
@@ -281,6 +294,11 @@ class DismissAdvisoryRequest(BaseModel):
     promoteToRule: bool = False
 
 
+class UserInputBody(BaseModel):
+    text: str = ""
+    skip: bool = False
+
+
 class ConfirmSuggestionRequest(BaseModel):
     promoteToRule: bool = False
 
@@ -332,7 +350,8 @@ class LLMTestResponse(BaseModel):
 # ── Agent Management ─────────────────────────────────────────────────────────
 
 AgentRole = Literal[
-    'analyst', 'pm', 'ux', 'architect', 'sm', 'dev', 'qa', 'quickdev', 'techwriter'
+    'analyst', 'pm', 'ux', 'architect', 'sm', 'dev', 'qa', 'quickdev', 'techwriter',
+    'reqLead',
 ]
 AgentStatus = Literal['active', 'idle', 'running', 'disabled', 'draft']
 AgentSource = Literal['builtin', 'custom', 'fork']
@@ -432,3 +451,61 @@ class AgentDetailResponse(BaseModel):
 class CommandListResponse(BaseModel):
     data: list[CommandOut]
     total: int
+
+
+# ── User Management ─────────────────────────────────────────────────────────
+
+UserRole = Literal['admin', 'member', 'viewer']
+UserStatus = Literal['active', 'disabled']
+
+
+class UserOut(BaseModel):
+    id: str
+    username: str
+    displayName: str
+    email: str
+    role: UserRole
+    status: UserStatus
+    avatar: Optional[str] = None
+    createdAt: int
+    updatedAt: int
+
+
+class UserCreateRequest(BaseModel):
+    username: str
+    displayName: str
+    email: str
+    role: UserRole = "member"
+    avatar: Optional[str] = None
+
+
+class UserPatchRequest(BaseModel):
+    username: Optional[str] = None
+    displayName: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[UserRole] = None
+    avatar: Optional[str] = None
+
+
+class UserListResponse(BaseModel):
+    data: list[UserOut]
+    total: int
+
+
+# ── Commander Events ───────────────────────────────────────────────────────
+
+class CommanderEventOut(BaseModel):
+    id: str
+    reqId: str
+    seq: int
+    eventType: str
+    role: str
+    agentName: str
+    content: str
+    metadata: dict
+    createdAt: int
+
+
+class CommanderEventsResponse(BaseModel):
+    events: list[CommanderEventOut]
+    lastSeq: int

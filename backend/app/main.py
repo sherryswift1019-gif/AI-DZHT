@@ -2,7 +2,7 @@ import os
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -19,6 +19,7 @@ from .routers.projects import router as projects_router
 from .routers.requirements import router as requirements_router
 from .routers.llm_config import router as llm_config_router
 from .routers.agents import router as agents_router
+from .routers.users import router as users_router
 
 load_dotenv()
 
@@ -42,6 +43,7 @@ app.include_router(projects_router)
 app.include_router(requirements_router)
 app.include_router(llm_config_router)
 app.include_router(agents_router)
+app.include_router(users_router)
 
 
 @app.get("/health")
@@ -51,12 +53,18 @@ def health() -> dict:
 
 @app.post("/api/v1/workflow/suggest", response_model=WorkflowSuggestResponse)
 async def workflow_suggest(req: WorkflowSuggestRequest) -> WorkflowSuggestResponse:
-    return await suggest_workflow(req)
+    try:
+        return await suggest_workflow(req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.post("/api/v1/steps/detail", response_model=StepDetailResponse)
 async def step_detail(req: StepDetailRequest) -> StepDetailResponse:
-    return await get_step_detail(req)
+    try:
+        return await get_step_detail(req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.get("/api/v1/steps/stream")
@@ -96,4 +104,7 @@ async def artifact_content(req: ArtifactContentRequest) -> ArtifactContentRespon
         if stored:
             fmt = stored["format"] if stored["format"] in ("markdown", "code") else "markdown"
             return ArtifactContentResponse(content=stored["content"], format=fmt)
-    return await get_artifact_content(req)
+    try:
+        return await get_artifact_content(req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

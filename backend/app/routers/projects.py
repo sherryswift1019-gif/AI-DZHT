@@ -26,7 +26,10 @@ def _ensure_project(project_id: str) -> dict:
 
 @router.post("/generate-context", response_model=GenerateContextResponse)
 async def generate_context_endpoint(body: GenerateContextRequest) -> GenerateContextResponse:
-    return await generate_context(body)
+    try:
+        return await generate_context(body)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("", response_model=list[ProjectOut])

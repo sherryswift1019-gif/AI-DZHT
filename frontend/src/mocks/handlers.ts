@@ -45,6 +45,11 @@ const ARTIFACTS: Record<string, StepDetailResponse['artifacts']> = {
   Paige: [
     { name: '技术文档', type: 'document', summary: '完成接口文档、部署指南和用户手册，符合团队文档规范。' },
   ],
+  Lena: [
+    { name: '商业研究报告', type: 'report', summary: '完成市场调研、竞品分析和行业趋势研究，数据驱动的商业洞察。' },
+    { name: '产品简报', type: 'document', summary: '凝练核心需求方向、目标用户和关键成功指标。' },
+    { name: '产品需求文档', type: 'document', summary: '完整 PRD，含执行摘要、用户故事、功能需求、非功能需求和验收标准。' },
+  ],
 }
 
 const PLAN_DESC: Record<string, string> = {
@@ -57,6 +62,7 @@ const PLAN_DESC: Record<string, string> = {
   Quinn: '执行自动化测试和代码质量审查，输出完整测试报告，确保功能符合验收标准。',
   Barry: '快速实现需求功能，输出经过基本测试的可运行代码。',
   Paige: '编写完整的技术文档，包括接口说明、部署指南和使用手册。',
+  Lena: '从商业研究到 PRD 全链路执行：头脑风暴→市场调研→竞品分析→产品简报→PRD 编写→三轮审查→知识沉淀。',
 }
 
 function nowMinus(minAgo: number): string {
@@ -180,6 +186,26 @@ const LIVE_LOGS: Record<string, string[]> = {
     '[review] 文档完整性检查：无遗漏接口',
     '[writing] 用户手册终稿：5 个章节，配截图说明',
     '[output] ✓ 技术文档 已就绪',
+  ],
+  Lena: [
+    '[init] 加载项目上下文与需求描述',
+    '[exec:BP] 正在执行头脑风暴...',
+    '[done:BP] 完成 → 产出：创意发散清单',
+    '[exec:MR] 正在执行市场研究...',
+    '[done:MR] 完成 → 产出：市场研究报告',
+    '[review:adversarial] 正在对「市场研究报告」进行对抗性审查...',
+    '[findings] 发现 2 个逻辑缺口，正在修订...',
+    '[review:structural] 正在进行结构完整性审查...',
+    '[pass] 「市场研究报告」结构审查通过',
+    '[exec:CP] 正在创建 PRD...',
+    '[done:CP] 完成 → 产出：产品需求文档（草稿）',
+    '[review:adversarial] 正在对「产品需求文档」进行对抗性审查...',
+    '[revise] 正在根据对抗性审查反馈修订...',
+    '[review:edge-case] 正在进行边界用例审查...',
+    '[review:structural] 正在进行结构完整性审查...',
+    '[output] ✓「产品需求文档」定稿完成（经 3 轮审查）',
+    '[knowledge] 正在从产出物中提炼可复用知识...',
+    '[knowledge:done] 提取了 3 条业务规则、5 个领域术语、2 条市场洞察',
   ],
 }
 
@@ -541,12 +567,8 @@ export const handlers = [
     return HttpResponse.json(mockStepDetail(body))
   }),
 
-  // POST /api/v1/artifacts/content — mock fallback
-  http.post(`${BASE}/artifacts/content`, async ({ request }) => {
-    const body = await request.json() as ArtifactContentRequest
-    await new Promise(r => setTimeout(r, 900))
-    return HttpResponse.json(mockArtifactContent(body))
-  }),
+  // POST /api/v1/artifacts/content — 走真实后端（DB 查找 + LLM fallback）
+  // 已移除 mock handler，请求透传到 Vite proxy → 后端
 
   // LLM Config — 不 mock，走真实后端 /api/v1/llm-config/*
 ]

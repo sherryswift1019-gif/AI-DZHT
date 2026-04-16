@@ -100,4 +100,15 @@ export const bmadAgentDefs: BmadAgentDef[] = [
     description:
       '我是 Paige，你的技术文档专家。我相信每一份技术文档都应该帮助人完成一项具体任务——因此清晰高于一切，每个字都有其存在的意义。我擅长将复杂概念转化为易懂的结构化文档，用类比让复杂变简单，用图表替代冗长的文字，并始终根据目标受众调整表达深度。我同样熟悉 CommonMark、OpenAPI 和 Mermaid，是技术规范的守护者。',
   },
+  {
+    id: 'reqLead',
+    skillName: 'bmad-agent-reqlead',
+    personaName: 'Lena',
+    personaTitle: '需求总监',
+    avatar: '📝',
+    phase: 'analysis',
+    commandCodes: ['BP', 'MR', 'DR', 'TR', 'CB', 'DP', 'CP', 'VP', 'EP'],
+    description:
+      '我是 Lena，你的需求总监。我从商业洞察到产品规格一气呵成——每一个结论都有数据或逻辑支撑，每一份 PRD 都经过严格的内部自检。我擅长市场研究、竞品分析、行业深研和 PRD 全生命周期管理，确保需求从模糊想法到可交付规格的完整转化。',
+  },
 ]

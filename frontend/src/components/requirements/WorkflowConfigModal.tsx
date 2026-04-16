@@ -17,6 +17,7 @@ const ROLE_META: Record<AgentRole, { personaName: string; personaTitle: string }
   qa:         { personaName: 'Quinn',   personaTitle: 'QA 工程师' },
   quickdev:   { personaName: 'Barry',   personaTitle: '快速开发专家' },
   techwriter: { personaName: 'Paige',   personaTitle: '技术文档专家' },
+  reqLead:    { personaName: 'Lena',    personaTitle: '需求总监' },
 }
 
 // ── 每个 Agent 角色拥有的命令能力 ────────────────────────────────────
@@ -45,6 +46,13 @@ const AGENT_COMMANDS: Record<AgentRole, { code: string; name: string }[]> = {
     { code: 'MG', name: 'Mermaid 图表' }, { code: 'VD', name: '验证文档' },
     { code: 'EC', name: '解释概念' },
   ],
+  reqLead: [
+    { code: 'BP', name: '头脑风暴' }, { code: 'MR', name: '市场研究' },
+    { code: 'DR', name: '领域研究' }, { code: 'TR', name: '技术研究' },
+    { code: 'CB', name: '产品简报' }, { code: 'DP', name: '文档项目' },
+    { code: 'CP', name: '创建 PRD' }, { code: 'VP', name: '验证 PRD' },
+    { code: 'EP', name: '编辑 PRD' },
+  ],
 }
 
 // ── 内置工作流模板 ────────────────────────────────────────────────────
@@ -54,7 +62,7 @@ interface TemplateStep {
 }
 
 interface WorkflowTemplate {
-  id: 'full' | 'quick' | 'bugfix' | 'custom'
+  id: 'full' | 'quick' | 'bugfix' | 'requirements' | 'custom'
   icon: string
   label: string
   desc: string
@@ -96,12 +104,26 @@ const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     ],
   },
   {
+    id: 'requirements',
+    icon: '📝',
+    label: '需求驱动',
+    desc: '从研究到 PRD 一气呵成→UX→架构→开发→测试',
+    steps: [
+      { name: '需求研究与规划', agentRole: 'reqLead'   },
+      { name: 'UX 设计',       agentRole: 'ux'        },
+      { name: '架构设计',       agentRole: 'architect' },
+      { name: '开发实现',       agentRole: 'dev'       },
+      { name: '自动化测试',     agentRole: 'qa'        },
+    ],
+  },
+  {
     id: 'custom',
     icon: '⚙️',
     label: '自定义',
     desc: '手动选择并配置所需 Agent 节点',
     steps: [
       { name: '需求分析',    agentRole: 'analyst'    },
+      { name: '需求总监',    agentRole: 'reqLead'    },
       { name: '产品规划',    agentRole: 'pm'         },
       { name: 'UX 设计',    agentRole: 'ux'         },
       { name: '架构设计',    agentRole: 'architect'  },
@@ -475,10 +497,10 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
                             <button
                               onClick={(e) => { e.stopPropagation(); toggleApproval(idx) }}
                               className={cn(
-                                'mt-2 self-start rounded border px-1.5 py-[2px] text-[8px] font-semibold leading-none transition-all',
+                                'mt-2 self-start rounded border px-2 py-[3px] text-[9px] font-semibold leading-none transition-all',
                                 step.requiresApproval
-                                  ? 'border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.1)] text-[#ff9f0a]'
-                                  : 'border-[var(--border)] bg-transparent text-[var(--text-3)]',
+                                  ? 'border-[rgba(255,159,10,0.5)] bg-[rgba(255,159,10,0.15)] text-[#ff9f0a]'
+                                  : 'border-[var(--border)] bg-[var(--bg-panel-2)] text-[var(--text-2)] hover:text-[var(--text-1)]',
                               )}
                             >
                               {step.requiresApproval ? '需审批' : '自动'}

@@ -8,6 +8,7 @@ project_seq        – monotonic sequence counter per project (for REQ codes).
 artifacts          – produced artifacts from workflow execution.
 commander_state    – persisted Commander conversation when paused for approval.
 pending_suggestions – Agent-suggested context updates awaiting human confirmation.
+users              – platform user accounts with role and status management.
 """
 from __future__ import annotations
 
@@ -116,6 +117,37 @@ commander_state_table = Table(
     Column("updated_at", Integer, default=0),
 )
 
+# ── Commander Events ─────────────────────────────────────────────────────────
+
+commander_events_table = Table(
+    "commander_events",
+    metadata,
+    Column("id", String, primary_key=True),          # uuid4
+    Column("req_id", String, nullable=False),
+    Column("seq", Integer, nullable=False),            # 每个 req 内单调递增
+    Column("event_type", String, nullable=False),
+    Column("role", String, nullable=False),             # commander | agent | user | system
+    Column("agent_name", String, default=""),
+    Column("content", Text, nullable=False),
+    Column("metadata_json", Text, default="{}"),
+    Column("created_at", Integer, nullable=False),
+)
+
+
+def row_to_commander_event(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "reqId": row.req_id,
+        "seq": row.seq,
+        "eventType": row.event_type,
+        "role": row.role,
+        "agentName": row.agent_name,
+        "content": row.content,
+        "metadata": _j(row.metadata_json, {}),
+        "createdAt": row.created_at,
+    }
+
+
 # ── LLM Config ───────────────────────────────────────────────────────────────
 
 llm_config_table = Table(
@@ -183,6 +215,22 @@ agents_table = Table(
     Column("updated_at", String, nullable=False),    # ISO 8601
 )
 
+# ── Users ───────────────────────────────────────────────────────────────────
+
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("username", String, nullable=False, unique=True),
+    Column("display_name", String, nullable=False),
+    Column("email", String, nullable=False),
+    Column("role", String, default="member"),           # admin | member | viewer
+    Column("status", String, default="active"),         # active | disabled
+    Column("avatar", String, nullable=True),
+    Column("created_at", Integer, default=0),
+    Column("updated_at", Integer, default=0),
+)
+
 # ── Init ──────────────────────────────────────────────────────────────────────
 
 def init_db() -> None:
@@ -192,6 +240,8 @@ def init_db() -> None:
     _seed_llm_config()
     _seed_commands_if_empty()
     _seed_agents_if_empty()
+    _seed_users_if_empty()
+    _ensure_reqlead_agent()
 
 
 # ── Row ↔ dict helpers ────────────────────────────────────────────────────────
@@ -272,6 +322,20 @@ def row_to_agent(row: Any) -> dict[str, Any]:
         "isProtected": bool(row.is_protected),
         "forkedFrom": _j(row.forked_from, None),
         "createdBy": row.created_by,
+        "createdAt": row.created_at,
+        "updatedAt": row.updated_at,
+    }
+
+
+def row_to_user(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "username": row.username,
+        "displayName": row.display_name,
+        "email": row.email,
+        "role": row.role,
+        "status": row.status,
+        "avatar": row.avatar,
         "createdAt": row.created_at,
         "updatedAt": row.updated_at,
     }
@@ -689,6 +753,37 @@ def _seed_agents_if_empty() -> None:
              "share_scope": "team", "is_protected": 1, "forked_from": None,
              "created_by": "system", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-04-01T00:00:00Z"},
 
+            {"id": "agent-reqlead", "name": "Lena",
+             "description": "商业研究 · 市场分析 · 行业深研 · PRD 全生命周期 · 全链路需求管理",
+             "role": "reqLead", "source": "builtin", "status": "active", "version": "v1",
+             "command_ids": json.dumps(["c1", "c3", "c2", "c4", "c20", "c31", "c5", "c15", "c6"]),
+             "prompt_blocks": json.dumps({
+                 "roleDefinition": (
+                     "你是 Lena，AI-DZHT 的需求总监 Agent。你务实、专业、全面，"
+                     "从商业洞察到产品规格一气呵成。你不是空想家——每一个结论都有数据或逻辑支撑，"
+                     "每一份 PRD 都经过严格的内部自检。你像一个资深的需求架构师，"
+                     "既能洞察市场全貌，又能精确到每一条验收标准。"
+                 ),
+                 "capabilityScope": (
+                     "负责需求全链路管理：头脑风暴、市场研究、行业深研、竞品分析、产品简报，"
+                     "到 PRD 创建、验证与修订。产出覆盖从模糊想法到可交付规格的完整转化。"
+                     "不包含 Epic/Story 拆解和实现就绪评审——那是产品经理的后续工作。"
+                 ),
+                 "behaviorConstraints": (
+                     "1. 研究阶段产出必须有信息来源标注或逻辑推导链；"
+                     "2. PRD 必须与研究阶段产出物交叉引用，不能凭空编造需求；"
+                     "3. 每个命令产出物都必须可被下游 Agent 直接消费；"
+                     "4. 避免空洞的管理语言，所有输出须具体可操作。"
+                 ),
+                 "outputSpec": (
+                     "使用 Markdown 格式，层级清晰。研究类产出物须包含数据表格和结论摘要。"
+                     "PRD 须包含执行摘要、用户故事、功能需求、非功能需求和验收标准。"
+                     "每份产出物开头须有 50 字以内的摘要。"
+                 ),
+             }),
+             "share_scope": "team", "is_protected": 1, "forked_from": None,
+             "created_by": "system", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-04-16T00:00:00Z"},
+
             # ── 自定义 Agent ──
             {"id": "agent-ecom-pm", "name": "电商产品 Agent",
              "description": "专注电商转化漏斗分析，含合规与运营规范",
@@ -716,3 +811,69 @@ def _seed_agents_if_empty() -> None:
              "created_by": "陈静", "created_at": "2026-03-20T00:00:00Z", "updated_at": "2026-04-05T00:00:00Z"},
         ]
         conn.execute(insert(agents_table), agent_seeds)
+
+
+def _seed_users_if_empty() -> None:
+    """Seed initial platform users matching the owner/member IDs used in project seeds."""
+    with engine.begin() as conn:
+        rows = conn.execute(select(users_table)).fetchall()
+        if rows:
+            return
+        user_seeds = [
+            {"id": "u1", "username": "zhangshanshan", "display_name": "张珊珊",
+             "email": "zhangshanshan@example.com", "role": "admin", "status": "active",
+             "avatar": None, "created_at": 1_000_000_000, "updated_at": 1_000_000_000},
+            {"id": "u2", "username": "liming", "display_name": "李明",
+             "email": "liming@example.com", "role": "member", "status": "active",
+             "avatar": None, "created_at": 1_000_000_000, "updated_at": 1_000_000_000},
+            {"id": "u3", "username": "wangwei", "display_name": "王伟",
+             "email": "wangwei@example.com", "role": "member", "status": "active",
+             "avatar": None, "created_at": 1_000_000_000, "updated_at": 1_000_000_000},
+            {"id": "u4", "username": "chenjing", "display_name": "陈静",
+             "email": "chenjing@example.com", "role": "member", "status": "active",
+             "avatar": None, "created_at": 1_000_000_000, "updated_at": 1_000_000_000},
+        ]
+        conn.execute(insert(users_table), user_seeds)
+
+
+def _ensure_reqlead_agent() -> None:
+    """增量迁移：已有 DB 若缺少 agent-reqlead 则插入。"""
+    with engine.begin() as conn:
+        exists = conn.execute(
+            select(agents_table).where(agents_table.c.id == "agent-reqlead")
+        ).first()
+        if exists:
+            return
+        conn.execute(insert(agents_table).values({
+            "id": "agent-reqlead", "name": "Lena",
+            "description": "商业研究 · 市场分析 · 行业深研 · PRD 全生命周期 · 全链路需求管理",
+            "role": "reqLead", "source": "builtin", "status": "active", "version": "v1",
+            "command_ids": json.dumps(["c1", "c3", "c2", "c4", "c20", "c31", "c5", "c15", "c6"]),
+            "prompt_blocks": json.dumps({
+                "roleDefinition": (
+                    "你是 Lena，AI-DZHT 的需求总监 Agent。你务实、专业、全面，"
+                    "从商业洞察到产品规格一气呵成。你不是空想家——每一个结论都有数据或逻辑支撑，"
+                    "每一份 PRD 都经过严格的内部自检。你像一个资深的需求架构师，"
+                    "既能洞察市场全貌，又能精确到每一条验收标准。"
+                ),
+                "capabilityScope": (
+                    "负责需求全链路管理：头脑风暴、市场研究、行业深研、竞品分析、产品简报，"
+                    "到 PRD 创建、验证与修订。产出覆盖从模糊想法到可交付规格的完整转化。"
+                    "不包含 Epic/Story 拆解和实现就绪评审——那是产品经理的后续工作。"
+                ),
+                "behaviorConstraints": (
+                    "1. 研究阶段产出必须有信息来源标注或逻辑推导链；"
+                    "2. PRD 必须与研究阶段产出物交叉引用，不能凭空编造需求；"
+                    "3. 每个命令产出物都必须可被下游 Agent 直接消费；"
+                    "4. 避免空洞的管理语言，所有输出须具体可操作。"
+                ),
+                "outputSpec": (
+                    "使用 Markdown 格式，层级清晰。研究类产出物须包含数据表格和结论摘要。"
+                    "PRD 须包含执行摘要、用户故事、功能需求、非功能需求和验收标准。"
+                    "每份产出物开头须有 50 字以内的摘要。"
+                ),
+            }),
+            "share_scope": "team", "is_protected": 1, "forked_from": None,
+            "created_by": "system", "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-16T00:00:00Z",
+        }))
