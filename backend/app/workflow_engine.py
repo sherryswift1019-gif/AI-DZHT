@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from .context import assemble_context
-from .llm import execute_worker_agent, get_client
+from .llm import execute_worker_agent, chat_with_tools
 from .storage import (
     delete_commander_state,
     delete_pending_suggestion,
@@ -29,6 +29,20 @@ from .storage import (
 
 # ── 并发保护 ──────────────────────────────────────────────────────────────────
 _pipeline_locks: dict[str, asyncio.Lock] = {}
+
+
+class _ToolCallFunction:
+    """Adapter: dict → attribute access for tool_call.function."""
+    def __init__(self, d: dict):
+        self.name: str = d.get("name", "")
+        self.arguments: str = d.get("arguments", "{}")
+
+
+class _ToolCall:
+    """Adapter: dict → attribute access for tool_call objects."""
+    def __init__(self, d: dict):
+        self.id: str = d.get("id", "")
+        self.function = _ToolCallFunction(d.get("function", {}))
 
 # ── Commander Tools ───────────────────────────────────────────────────────────
 
@@ -178,21 +192,19 @@ async def _commander_loop(
         ]
 
     while True:
-        resp = await get_client().chat.completions.create(
-            model="gpt-4o",
+        msg_dict = await chat_with_tools(
             messages=messages,
             tools=COMMANDER_TOOLS,
-            tool_choice="required",
+            max_tokens=1024,
         )
-        msg = resp.choices[0].message
-        # 序列化时过滤 None 值，避免 OpenAI API 拒绝 null 字段
-        msg_dict = {k: v for k, v in msg.model_dump().items() if v is not None}
         messages.append(msg_dict)
 
-        tool_calls = msg.tool_calls or []
+        tool_calls = msg_dict.get("tool_calls") or []
         pause = False
 
-        for tc in tool_calls:
+        for tc_raw in tool_calls:
+            # 统一为类似对象访问的方式
+            tc = _ToolCall(tc_raw)
             result, should_pause = await _dispatch(tc, req_id, project_id)
             messages.append({
                 "role": "tool",

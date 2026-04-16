@@ -7,6 +7,7 @@ import { EditAgentPage } from '@/pages/agent-management/EditAgentPage'
 import { CommandLibraryPage } from '@/pages/commands/CommandLibraryPage'
 import { ProjectListPage } from '@/pages/project-management/ProjectListPage'
 import { ProjectDetailPage } from '@/pages/project-management/ProjectDetailPage'
+import { LLMSettingsPage } from '@/pages/settings/LLMSettingsPage'
 import { useThemeStore } from '@/stores/themeStore'
 
 const queryClient = new QueryClient()
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="/agents/:id" element={<AgentDetailPage />} />
               {/* 从 Agent 管理内跳转，不在顶部导航显示 */}
               <Route path="/commands" element={<CommandLibraryPage />} />
+              <Route path="/settings" element={<LLMSettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

@@ -5,14 +5,14 @@ import { Step1BasicInfo } from './wizard/Step1BasicInfo'
 import { Step2Capabilities } from './wizard/Step2Capabilities'
 import { Step3Prompt } from './wizard/Step3Prompt'
 import { useWizardStore } from '@/stores/agentWizardStore'
-import { mockAgents } from '@/mocks/data/agents'
+import { useAgentDetail } from '@/hooks/useAgents'
 
 export function EditAgentPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { step, setField, setPromptBlocks, toggleCommand, reset } = useWizardStore()
 
-  const agent = mockAgents.find((a) => a.id === id)
+  const { data: agent, isLoading } = useAgentDetail(id)
 
   useEffect(() => {
     reset()
@@ -28,7 +28,15 @@ export function EditAgentPage() {
       toggleCommand(cmd)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id, agent])
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen text-sm text-[var(--text-2)]">
+        加载中…
+      </div>
+    )
+  }
 
   if (!agent) {
     return (

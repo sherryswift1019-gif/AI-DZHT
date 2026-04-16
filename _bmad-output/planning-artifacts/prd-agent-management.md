@@ -15,6 +15,25 @@ classification:
 
 # Product Requirements Document - AI-DZHT Agent 管理模块
 
+> **实现差距分析（2026-04-16 对齐）**
+>
+> 本 PRD 描述的是完整的 Agent 管理模块愿景。以下为当前代码实际状态：
+>
+> | 能力域 | 状态 | 说明 |
+> |---|---|---|
+> | Agent 模板 CRUD | ⚠️ 仅 Mock | 前端 UI 完整（列表/详情/向导/编辑），但使用 MSW mock 数据，无后端持久化 |
+> | BMAD 命令库 | ⚠️ 仅 Mock | 48 个命令在前端 mock 中定义，无后端管理 API |
+> | 项目上下文配置（F22） | ✅ 已实现 | 四层模型 + AI 生成 + scope 过滤 |
+> | RBAC 四角色 | ❌ 未实现 | 无认证系统（计划 Phase 2-4） |
+> | 多租户（Org → Team → Project） | ❌ 未实现 | 扁平项目列表（计划 Phase 4） |
+> | 三步创建向导 + AI 草稿（F04/F05） | ⚠️ 仅 Mock | UI 可交互但不持久化 |
+> | 能力反查/重复警告（F12/F13） | ❌ 未实现 | Phase 2 |
+> | 版本管理/快照（F21） | ❌ 未实现 | Phase 2 |
+> | 跨团队共享（F06/F23） | ❌ 未实现 | Phase 3-4 |
+>
+> **下一步**：Phase 1 优先实现 Agent 管理后端（CRUD + 持久化），替换 MSW mock。
+> 详见 `development-roadmap.md` 分期计划。
+
 **Author:** Zhangshanshan
 **Date:** 2026-04-13
 

@@ -119,10 +119,13 @@ class GenerateContextRequest(BaseModel):
 
 
 class GenerateContextResponse(BaseModel):
-    industry: str
-    techStack: list[TechItem]
     goal: str = ""
+    targetUsers: str = ""
+    industry: str = ""
+    techStack: list[TechItem] = []
     archSummary: str = ""
+    avoid: list[AvoidItem] = []
+    rules: list[Rule] = []
 
 
 # ── Requirements CRUD ─────────────────────────────────────────────────────────
@@ -280,3 +283,152 @@ class DismissAdvisoryRequest(BaseModel):
 
 class ConfirmSuggestionRequest(BaseModel):
     promoteToRule: bool = False
+
+
+# ── LLM Config ──────────────────────────────────────────────────────────────
+
+LLMProvider = Literal['github', 'anthropic']
+LLMAuthType = Literal['api_key', 'oauth_token']
+
+
+class LLMModelInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+
+
+class LLMProviderInfo(BaseModel):
+    id: LLMProvider
+    name: str
+    models: list[LLMModelInfo]
+    authType: LLMAuthType = 'api_key'
+    authLabel: str = 'API Key'
+    authHint: str = ''
+    defaultBaseUrl: Optional[str] = None
+
+
+class LLMConfigOut(BaseModel):
+    provider: LLMProvider
+    model: str
+    authType: LLMAuthType
+    hasToken: bool
+    baseUrl: Optional[str] = None
+
+
+class LLMConfigUpdateRequest(BaseModel):
+    provider: LLMProvider
+    model: str
+    authType: Optional[LLMAuthType] = None
+    token: Optional[str] = None
+    baseUrl: Optional[str] = None
+
+
+class LLMTestResponse(BaseModel):
+    success: bool
+    message: str
+    model: Optional[str] = None
+
+
+# ── Agent Management ─────────────────────────────────────────────────────────
+
+AgentRole = Literal[
+    'analyst', 'pm', 'ux', 'architect', 'sm', 'dev', 'qa', 'quickdev', 'techwriter'
+]
+AgentStatus = Literal['active', 'idle', 'running', 'disabled', 'draft']
+AgentSource = Literal['builtin', 'custom', 'fork']
+AgentShareScope = Literal['team', 'org', 'apply']
+CommandPhase = Literal['analysis', 'planning', 'architecture', 'implementation', 'qa', 'utility']
+
+
+class CommandOut(BaseModel):
+    id: str
+    code: str
+    name: str
+    description: str
+    detail: Optional[str] = None
+    phase: CommandPhase
+    outputs: Optional[str] = None
+    nextSteps: list[str] = []
+    isProtected: bool
+    isEnabled: bool
+
+
+class AgentForkedFrom(BaseModel):
+    agentId: str
+    agentName: str
+    version: str
+
+
+class AgentInstanceSummary(BaseModel):
+    id: str
+    requirementId: str
+    requirementName: str
+    status: str
+    startedAt: str
+    endedAt: Optional[str] = None
+
+
+class PromptBlocksModel(BaseModel):
+    roleDefinition: str = ""
+    capabilityScope: str = ""
+    behaviorConstraints: str = ""
+    outputSpec: str = ""
+
+
+class AgentOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    role: AgentRole
+    source: AgentSource
+    status: AgentStatus
+    version: str
+    commands: list[CommandOut] = []
+    promptBlocks: PromptBlocksModel
+    shareScope: AgentShareScope
+    isProtected: bool
+    forkedFrom: Optional[AgentForkedFrom] = None
+    createdBy: str
+    createdAt: str
+    updatedAt: str
+    runningInstances: list[AgentInstanceSummary] = []
+    isLocked: bool = False
+
+
+class AgentCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    role: AgentRole
+    source: AgentSource = "custom"
+    status: AgentStatus = "draft"
+    version: str = "v1"
+    commandIds: list[str] = []
+    promptBlocks: PromptBlocksModel = PromptBlocksModel()
+    shareScope: AgentShareScope = "team"
+    forkedFrom: Optional[AgentForkedFrom] = None
+    createdBy: str = ""
+
+
+class AgentPatchRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    role: Optional[AgentRole] = None
+    status: Optional[AgentStatus] = None
+    version: Optional[str] = None
+    commandIds: Optional[list[str]] = None
+    promptBlocks: Optional[PromptBlocksModel] = None
+    shareScope: Optional[AgentShareScope] = None
+
+
+class AgentListResponse(BaseModel):
+    data: list[AgentOut]
+    total: int
+
+
+class AgentDetailResponse(BaseModel):
+    data: AgentOut
+
+
+class CommandListResponse(BaseModel):
+    data: list[CommandOut]
+    total: int

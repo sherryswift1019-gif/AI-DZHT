@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Search, Shield, ChevronDown, ChevronRight, Plus, Pencil,
   Trash2, X, Check, ArrowRight, FileText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
-import { mockCommands } from '@/mocks/data/agents'
+import { useCommandList } from '@/hooks/useAgents'
 import { bmadAgentDefs } from '@/mocks/data/bmadAgentDefs'
 import type { Command, CommandPhase } from '@/types/agent'
 
@@ -34,8 +34,14 @@ function findCmdName(commands: Command[], code: string): string {
 // ─── 主页面 ──────────────────────────────────────────────────────────
 
 export function CommandLibraryPage() {
-  const [commands, setCommands] = useState<Command[]>(mockCommands)
+  const { data: apiCommands = [], isLoading } = useCommandList()
+  const [commands, setCommands] = useState<Command[]>([])
   const [keyword, setKeyword] = useState('')
+
+  // Initialize local state from API data
+  useEffect(() => {
+    if (apiCommands.length > 0) setCommands(apiCommands)
+  }, [apiCommands])
   const [dialog, setDialog] = useState<DialogMode>(null)
   const [deleteTarget, setDeleteTarget] = useState<Command | null>(null)
 

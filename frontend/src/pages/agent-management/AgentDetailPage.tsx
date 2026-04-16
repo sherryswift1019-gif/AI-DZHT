@@ -4,8 +4,8 @@ import { Lock, GitFork, Pencil, Trash2, History, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import { AgentAvatar } from '@/components/ui/AgentAvatar'
-import { mockAgents } from '@/mocks/data/agents'
-import type { AgentStatus, AgentSource } from '@/types/agent'
+import { useAgentDetail } from '@/hooks/useAgents'
+import type { Agent, AgentStatus, AgentSource } from '@/types/agent'
 
 const PROMPT_BLOCK_LABELS = {
   roleDefinition:      '① 角色定义',
@@ -34,7 +34,16 @@ export function AgentDetailPage() {
   const [tab, setTab] = useState<Tab>('config')
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
-  const agent = mockAgents.find((a) => a.id === id)
+  const { data: agent, isLoading } = useAgentDetail(id)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen text-sm text-[var(--text-2)]">
+        加载中…
+      </div>
+    )
+  }
+
   if (!agent) {
     return (
       <div className="flex items-center justify-center h-screen text-[var(--text-2)] text-sm">
@@ -176,8 +185,7 @@ export function AgentDetailPage() {
 
 // ─── Config Tab ───────────────────────────────────────────────────
 
-function ConfigTab({ agent }: { agent: ReturnType<typeof mockAgents.find> & object }) {
-  if (!agent) return null
+function ConfigTab({ agent }: { agent: Agent }) {
   return (
     <div className="flex flex-col gap-6">
       {/* Commands */}
@@ -236,8 +244,7 @@ function ConfigTab({ agent }: { agent: ReturnType<typeof mockAgents.find> & obje
 
 // ─── Instances Tab ────────────────────────────────────────────────
 
-function InstancesTab({ agent }: { agent: ReturnType<typeof mockAgents.find> & object }) {
-  if (!agent) return null
+function InstancesTab({ agent }: { agent: Agent }) {
   const instances = agent.runningInstances
 
   if (!instances.length) {

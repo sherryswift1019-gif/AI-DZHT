@@ -1,18 +1,18 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { MessageSquare, ChevronDown, ChevronUp, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import { AgentAvatar } from '@/components/ui/AgentAvatar'
-import { mockAgents } from '@/mocks/data/agents'
-
-// Mock: 当前需求关联的 3 个 Agent
-const REQUIREMENT_AGENTS = mockAgents.slice(1, 4) // 产品经理、UX、架构师
+import { useAgentList } from '@/hooks/useAgents'
 
 const PHASE_LABELS: Record<string, string> = {
   analysis: '分析', planning: '规划', architecture: '架构', implementation: '实现', qa: 'QA',
 }
 
 export function RequirementAgentView() {
+  const { data: agents = [] } = useAgentList()
+  // 当前需求关联的 Agent（产品经理、UX、架构师）
+  const REQUIREMENT_AGENTS = useMemo(() => agents.slice(1, 4), [agents])
   const [expanded, setExpanded] = useState<string | null>(null)
   const [feedbackAgent, setFeedbackAgent] = useState<string | null>(null)
   const [feedbackText, setFeedbackText] = useState('')

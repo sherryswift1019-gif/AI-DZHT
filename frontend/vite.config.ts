@@ -18,6 +18,11 @@ export default defineConfig({
     proxy: {
       '/api/v1/workflow': 'http://localhost:8000',
       '/api/v1/projects': 'http://localhost:8000',
+      '/api/v1/llm-config': 'http://localhost:8000',
+      '/api/v1/steps': 'http://localhost:8000',
+      '/api/v1/artifacts': 'http://localhost:8000',
+      '/api/v1/agents': 'http://localhost:8000',
+      '/api/v1/commands': 'http://localhost:8000',
     },
   },
 })

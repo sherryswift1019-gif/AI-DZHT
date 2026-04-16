@@ -1,6 +1,8 @@
 import { http, HttpResponse } from 'msw'
-import { mockAgents, mockCommands } from './data/agents'
-import type { StepDetailRequest, StepDetailResponse, ArtifactContentRequest, ArtifactContentResponse } from '@/types/project'
+import type {
+  StepDetailRequest, StepDetailResponse,
+  ArtifactContentRequest, ArtifactContentResponse,
+} from '@/types/project'
 
 const BASE = '/api/v1'
 
@@ -530,22 +532,7 @@ ${req.reqSummary}
 }
 
 export const handlers = [
-  // GET /api/v1/agents
-  http.get(`${BASE}/agents`, () => {
-    return HttpResponse.json({ data: mockAgents, total: mockAgents.length })
-  }),
-
-  // GET /api/v1/agents/:id
-  http.get(`${BASE}/agents/:id`, ({ params }) => {
-    const agent = mockAgents.find(a => a.id === params.id)
-    if (!agent) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ data: agent })
-  }),
-
-  // GET /api/v1/commands
-  http.get(`${BASE}/commands`, () => {
-    return HttpResponse.json({ data: mockCommands, total: mockCommands.length })
-  }),
+  // ── Agents & Commands — 走真实后端 /api/v1/agents, /api/v1/commands ────────
 
   // POST /api/v1/steps/detail — mock fallback（后端未启动时生效）
   http.post(`${BASE}/steps/detail`, async ({ request }) => {
@@ -561,51 +548,5 @@ export const handlers = [
     return HttpResponse.json(mockArtifactContent(body))
   }),
 
-  // POST /api/v1/projects/generate-context — AI 生成项目上下文 mock
-  http.post(`${BASE}/projects/generate-context`, async ({ request }) => {
-    const body = await request.json() as {
-      name: string
-      description: string
-      repository?: string
-      existingContext?: { industry: string; techStack: Array<{ name: string } | string>; rules?: Array<{ text: string } | string> }
-    }
-    await new Promise(r => setTimeout(r, 1200))
-    const name = body.name ?? ''
-    const desc = body.description ?? ''
-    const existing = body.existingContext
-
-    // 根据项目名称/描述推断行业与技术栈
-    const isAI = /AI|智能|机器学习|模型|大模型|LLM/i.test(name + desc)
-    const isMobile = /移动|App|iOS|Android|小程序/i.test(name + desc)
-    const isData = /数据|分析|报表|BI|dashboard/i.test(name + desc)
-
-    const industry = existing?.industry
-      || (isAI ? 'AI / 智能化软件' : isMobile ? '移动互联网' : isData ? '数据分析 / BI' : 'SaaS / 企业软件')
-
-    const existingTech = existing?.techStack ?? []
-    const techStack = existingTech.length
-      ? existingTech.map((t) => typeof t === 'string' ? t : t.name)
-      : isAI
-        ? ['Python', 'FastAPI', 'React', 'TypeScript', 'LangChain', 'PostgreSQL']
-        : isMobile
-          ? ['React Native', 'TypeScript', 'Node.js', 'PostgreSQL']
-          : isData
-            ? ['Python', 'FastAPI', 'React', 'TypeScript', 'ECharts', 'PostgreSQL']
-            : ['React', 'TypeScript', 'FastAPI', 'Python', 'SQLite']
-
-    const existingRules = existing?.rules ?? []
-    const conventions = existingRules.length
-      ? existingRules.map((r) => typeof r === 'string' ? r : r.text)
-      : [
-          'PRD 变更必须经版本评审后方可进入开发',
-          '阻塞超过 2 小时必须触发告警并同步项目负责人',
-          'API 接口遵循 RESTful 规范，错误码统一返回 RFC 7807 格式',
-          'PR 合并前须通过 CI 检查并获得至少 1 名成员 Approve',
-          '涉及数据库 Schema 变更须提供回滚方案',
-        ]
-
-    return HttpResponse.json({ industry, techStack, conventions })
-  }),
-
-  // /api/v1/workflow/** 不在此拦截 — 由 Vite proxy 代理到 localhost:8000
+  // LLM Config — 不 mock，走真实后端 /api/v1/llm-config/*
 ]

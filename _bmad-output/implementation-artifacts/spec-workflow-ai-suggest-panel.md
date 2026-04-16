@@ -2,11 +2,19 @@
 title: 'WorkflowConfigModal AI 工作流建议面板（MVP）'
 type: 'feature'
 created: '2026-04-14'
-status: 'in-review'
+status: 'superseded'
 baseline_commit: 'NO_VCS'
 context:
   - '_bmad-output/project-context.md'
 ---
+
+> **状态：已被超越（2026-04-16）**
+> 本 spec 描述的是 MVP 方案（复制 Prompt → 粘贴到外部工具）。实际实现已超越此方案：
+> - 后端 `POST /api/v1/workflow/suggest` 端点直接调用 LLM 生成结构化推荐
+> - 前端 `useWorkflowSuggest.ts` hook 集成真实 API 调用
+> - 返回 `{ recommendedTemplateId, reasoning, suggestedAgentRoles, confidence, warnings }`
+> 
+> 本文档保留作为设计演进记录。
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
 

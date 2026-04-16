@@ -17,14 +17,14 @@ from .database import init_db
 from .storage import get_artifact_by_name
 from .routers.projects import router as projects_router
 from .routers.requirements import router as requirements_router
+from .routers.llm_config import router as llm_config_router
+from .routers.agents import router as agents_router
 
 load_dotenv()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not os.environ.get("GITHUB_TOKEN"):
-        raise RuntimeError("GITHUB_TOKEN is not set. Please create backend/.env")
     init_db()
     yield
 
@@ -40,6 +40,8 @@ app.add_middleware(
 
 app.include_router(projects_router)
 app.include_router(requirements_router)
+app.include_router(llm_config_router)
+app.include_router(agents_router)
 
 
 @app.get("/health")

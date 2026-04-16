@@ -12,6 +12,23 @@ inputDocuments:
 
 # UX Design Specification AI-DZHT
 
+> **实现状态（2026-04-16）**
+>
+> | 页面 | 状态 | 说明 |
+> |---|---|---|
+> | 项目列表 `/projects` | ✅ 已实现 | 搜索/筛选/创建/设置 |
+> | 项目详情 `/projects/:id` | ✅ 已实现 | 需求管理 + 流水线可视化 + 审批 |
+> | Agent 列表 `/agents` | ✅ 仅 Mock | MSW mock 数据 |
+> | Agent 详情 `/agents/:id` | ✅ 仅 Mock | 配置/实例/历史 tab |
+> | Agent 编辑 `/agents/:id/edit` | ✅ 仅 Mock | 全屏编辑 |
+> | Agent 创建向导 | ✅ 仅 Mock | 3 步 Modal 向导 |
+> | 命令库 `/commands` | ✅ 仅 Mock | 按阶段分组 |
+> | LLM 设置 `/settings` | ✅ 已实现 | 双 Provider 配置 + 测试 |
+> | 可观测大盘 | ❌ 未实现 | 计划 Phase 2 |
+>
+> **Agent 角色**：9 个（Mary/John/Sally/Winston/Bob/Amelia/Quinn/Barry/Paige），非产品简报中的 7 个。
+> **Commander**：当前为后端 tool-calling 引擎（`workflow_engine.py`），非对话式 UI。前端通过流水线状态和审批按钮交互。
+
 **Author:** Zhangshanshan
 **Date:** 2026-04-13
 

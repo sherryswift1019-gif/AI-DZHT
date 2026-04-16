@@ -37,8 +37,12 @@ from .database import (
     artifacts_table,
     commander_state_table,
     pending_suggestions_table,
+    agents_table,
+    commands_table,
     row_to_project,
     row_to_requirement,
+    row_to_agent,
+    row_to_command,
 )
 
 
@@ -387,3 +391,153 @@ def delete_pending_suggestion(suggestion_id: str) -> None:
             delete(pending_suggestions_table)
             .where(pending_suggestions_table.c.id == suggestion_id)
         )
+
+
+# ── Commands ─────────────────────────────────────────────────────────────────
+
+def get_all_commands() -> list[dict[str, Any]]:
+    with engine.connect() as conn:
+        rows = conn.execute(select(commands_table)).fetchall()
+    return [row_to_command(r) for r in rows]
+
+
+def get_command(command_id: str) -> dict[str, Any] | None:
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(commands_table).where(commands_table.c.id == command_id)
+        ).fetchone()
+    return row_to_command(row) if row else None
+
+
+def save_command(command_id: str, data: dict[str, Any]) -> None:
+    row = {
+        "id": data["id"],
+        "code": data["code"],
+        "name": data["name"],
+        "description": data.get("description", ""),
+        "detail": data.get("detail"),
+        "phase": data["phase"],
+        "outputs": data.get("outputs"),
+        "next_steps": json.dumps(data.get("nextSteps", [])),
+        "is_protected": int(data.get("isProtected", True)),
+        "is_enabled": int(data.get("isEnabled", True)),
+    }
+    with engine.begin() as conn:
+        exists = conn.execute(
+            select(commands_table.c.id).where(commands_table.c.id == command_id)
+        ).fetchone()
+        if exists:
+            conn.execute(
+                update(commands_table).where(commands_table.c.id == command_id).values(**row)
+            )
+        else:
+            conn.execute(insert(commands_table).values(**row))
+
+
+def delete_command(command_id: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(delete(commands_table).where(commands_table.c.id == command_id))
+
+
+# ── Agents ───────────────────────────────────────────────────────────────────
+
+def get_all_agents() -> list[dict[str, Any]]:
+    """Return all agents with resolved commands and computed running instances."""
+    with engine.connect() as conn:
+        agent_rows = conn.execute(select(agents_table)).fetchall()
+        cmd_rows = conn.execute(select(commands_table)).fetchall()
+        req_rows = conn.execute(select(requirements_table)).fetchall()
+
+    cmd_lookup = {r.id: row_to_command(r) for r in cmd_rows}
+    agents = []
+    for r in agent_rows:
+        agent = row_to_agent(r)
+        agent["commands"] = [cmd_lookup[cid] for cid in agent.pop("commandIds") if cid in cmd_lookup]
+        agent["runningInstances"] = _compute_running_instances(agent["name"], req_rows)
+        agent["isLocked"] = len(agent["runningInstances"]) > 0
+        agents.append(agent)
+    return agents
+
+
+def get_agent(agent_id: str) -> dict[str, Any] | None:
+    """Return a single agent with resolved commands and computed running instances."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(agents_table).where(agents_table.c.id == agent_id)
+        ).fetchone()
+    if not row:
+        return None
+    agent = row_to_agent(row)
+
+    command_ids = agent.pop("commandIds")
+    with engine.connect() as conn:
+        if command_ids:
+            cmd_rows = conn.execute(
+                select(commands_table).where(commands_table.c.id.in_(command_ids))
+            ).fetchall()
+        else:
+            cmd_rows = []
+        req_rows = conn.execute(select(requirements_table)).fetchall()
+
+    cmd_lookup = {r.id: row_to_command(r) for r in cmd_rows}
+    agent["commands"] = [cmd_lookup[cid] for cid in command_ids if cid in cmd_lookup]
+    agent["runningInstances"] = _compute_running_instances(agent["name"], req_rows)
+    agent["isLocked"] = len(agent["runningInstances"]) > 0
+    return agent
+
+
+def save_agent(agent_id: str, data: dict[str, Any]) -> None:
+    """Insert or update an agent row."""
+    command_ids = data.get("commandIds", [])
+    if not command_ids and "commands" in data:
+        command_ids = [c["id"] if isinstance(c, dict) else c for c in data["commands"]]
+
+    row = {
+        "id": data["id"],
+        "name": data["name"],
+        "description": data.get("description", ""),
+        "role": data["role"],
+        "source": data.get("source", "custom"),
+        "status": data.get("status", "active"),
+        "version": data.get("version", "v1"),
+        "command_ids": json.dumps(command_ids),
+        "prompt_blocks": json.dumps(data.get("promptBlocks", {})),
+        "share_scope": data.get("shareScope", "team"),
+        "is_protected": int(data.get("isProtected", False)),
+        "forked_from": json.dumps(data["forkedFrom"]) if data.get("forkedFrom") else None,
+        "created_by": data.get("createdBy", ""),
+        "created_at": data.get("createdAt", ""),
+        "updated_at": data.get("updatedAt", ""),
+    }
+    with engine.begin() as conn:
+        exists = conn.execute(
+            select(agents_table.c.id).where(agents_table.c.id == agent_id)
+        ).fetchone()
+        if exists:
+            conn.execute(
+                update(agents_table).where(agents_table.c.id == agent_id).values(**row)
+            )
+        else:
+            conn.execute(insert(agents_table).values(**row))
+
+
+def delete_agent(agent_id: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(delete(agents_table).where(agents_table.c.id == agent_id))
+
+
+def _compute_running_instances(agent_name: str, req_rows: list) -> list[dict[str, Any]]:
+    """Scan requirement pipelines for steps where agentName matches and status is running."""
+    instances = []
+    for req_row in req_rows:
+        req = row_to_requirement(req_row)
+        for step in req.get("pipeline", []):
+            if step.get("agentName") == agent_name and step.get("status") == "running":
+                instances.append({
+                    "id": f"inst-{req['id']}-{step['id']}",
+                    "requirementId": req["id"],
+                    "requirementName": req["title"],
+                    "status": "running",
+                    "startedAt": step.get("updatedAt", ""),
+                })
+    return instances

@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Bot, Briefcase, Sun, Moon } from 'lucide-react'
+import { Bot, Briefcase, Settings, Sun, Moon } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 
 const NAV = [
   { to: '/projects', icon: Briefcase, label: '项目管理' },
   { to: '/agents',   icon: Bot,       label: 'Agent 管理' },
+  { to: '/settings', icon: Settings,  label: '设置' },
 ]
 
 export function AppShell() {

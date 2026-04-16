@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { useWizardStore } from '@/stores/agentWizardStore'
-import { mockCommands } from '@/mocks/data/agents'
+import { useCommandList } from '@/hooks/useAgents'
 import type { CommandPhase } from '@/types/agent'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 
@@ -14,11 +14,12 @@ const PHASES: { value: CommandPhase; label: string; emoji: string; desc: string 
 
 export function Step2Capabilities() {
   const { selectedCommands, toggleCommand, setStep } = useWizardStore()
+  const { data: allCommands = [] } = useCommandList()
   const selectedIds = new Set(selectedCommands.map((c) => c.id))
 
   const commandsByPhase = PHASES.map((phase) => ({
     ...phase,
-    commands: mockCommands.filter((c) => c.phase === phase.value),
+    commands: allCommands.filter((c) => c.phase === phase.value),
   }))
 
   return (

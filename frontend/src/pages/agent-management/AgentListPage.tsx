@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import { AgentCard } from '@/components/agent-management/AgentCard'
 import { CreateAgentModal } from '@/components/agent-management/CreateAgentModal'
-import { mockAgents } from '@/mocks/data/agents'
+import { useAgentList } from '@/hooks/useAgents'
 import type { AgentStatus, AgentSource } from '@/types/agent'
 
 type FilterStatus = AgentStatus | 'all'
@@ -22,13 +22,14 @@ const STATUS_FILTERS: { value: FilterStatus; label: string }[] = [
 
 export function AgentListPage() {
   const navigate = useNavigate()
+  const { data: agents = [], isLoading } = useAgentList()
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all')
   const [sourceFilter, setSourceFilter] = useState<FilterSource>('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
 
   const filtered = useMemo(() => {
-    return mockAgents.filter(agent => {
+    return agents.filter(agent => {
       const matchKeyword =
         !keyword ||
         agent.name.toLowerCase().includes(keyword.toLowerCase()) ||
@@ -40,11 +41,19 @@ export function AgentListPage() {
 
       return matchKeyword && matchStatus && matchSource
     })
-  }, [keyword, statusFilter, sourceFilter])
+  }, [agents, keyword, statusFilter, sourceFilter])
 
-  const runningCount = mockAgents.filter(a => a.status === 'running').length
-  const builtinCount = mockAgents.filter(a => a.source === 'builtin').length
-  const customCount  = mockAgents.filter(a => a.source !== 'builtin').length
+  const runningCount = agents.filter(a => a.status === 'running').length
+  const builtinCount = agents.filter(a => a.source === 'builtin').length
+  const customCount  = agents.filter(a => a.source !== 'builtin').length
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen text-sm text-[var(--text-2)]">
+        加载中…
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg-base)]">

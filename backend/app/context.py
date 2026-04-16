@@ -30,7 +30,7 @@ def assemble_context(ctx: dict, agent_name: str) -> str:
 
     tech: list[dict] = ctx.get("techStack", [])
     avoid: list[dict] = ctx.get("avoid", [])
-    rules: list[dict] = [r for r in ctx.get("rules", []) if r.get("scope") in scopes]
+    rules: list[dict] = [r for r in ctx.get("rules", []) if r.get("scope", "all") in scopes]
 
     # 教训策略：固化规则全部注入 + 最近 5 条相关教训
     all_lessons: list[dict] = ctx.get("lessons", [])

@@ -89,6 +89,14 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
   const [conventionsRaw, setConventionsRaw] = useState(
     (project.settings?.context ?? project.context)?.rules?.map((r) => typeof r === 'string' ? r : r.text).join('\n') ?? '',
   )
+  const [avoidRaw, setAvoidRaw] = useState(
+    (project.settings?.context ?? project.context)?.avoid?.map((a) => {
+      let s = a.item
+      if (a.useInstead) s += ` → ${a.useInstead}`
+      if (a.reason) s += `（${a.reason}）`
+      return s
+    }).join('\n') ?? '',
+  )
 
   // Lessons state
   const [lessons, setLessons] = useState<ContextLesson[]>(
@@ -109,6 +117,12 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
     setContext(ctx)
     setTechStackRaw(ctx.techStack.map((t) => typeof t === 'string' ? t : t.name).join(', '))
     setConventionsRaw(ctx.rules?.map((r) => typeof r === 'string' ? r : r.text).join('\n') ?? '')
+    setAvoidRaw(ctx.avoid?.map((a) => {
+      let s = typeof a === 'string' ? a : a.item
+      if (a.useInstead) s += ` → ${a.useInstead}`
+      if (a.reason) s += `（${a.reason}）`
+      return s
+    }).join('\n') ?? '')
     setLessons(ctx.lessons ?? [])
     setAddingLesson(false)
     setEditingLessonId(null)
@@ -146,19 +160,32 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
       })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
-      setContext((p) => ({ ...p, industry: data.industry }))
+      setContext((p) => ({
+        ...p,
+        industry: data.industry ?? p.industry,
+        goal: data.goal ?? p.goal,
+        targetUsers: data.targetUsers ?? p.targetUsers,
+        archSummary: data.archSummary ?? p.archSummary,
+        avoid: Array.isArray(data.avoid) ? data.avoid : (p.avoid ?? []),
+      }))
       setTechStackRaw(
         Array.isArray(data.techStack)
           ? data.techStack.map((t: unknown) => (typeof t === 'string' ? t : (t as { name: string }).name)).join(', ')
           : '',
       )
       setConventionsRaw(
-        Array.isArray(data.conventions)
-          ? data.conventions.join('\n')
-          : Array.isArray(data.rules)
-            ? data.rules.map((r: unknown) => (typeof r === 'string' ? r : (r as { text: string }).text)).join('\n')
-            : '',
+        Array.isArray(data.rules)
+          ? data.rules.map((r: unknown) => (typeof r === 'string' ? r : (r as { text: string }).text)).join('\n')
+          : '',
       )
+      if (Array.isArray(data.avoid)) {
+        setAvoidRaw(data.avoid.map((a: Record<string, string>) => {
+          let s = a.item ?? a
+          if (a.useInstead) s += ` → ${a.useInstead}`
+          if (a.reason) s += `（${a.reason}）`
+          return s
+        }).join('\n'))
+      }
     } catch (e) {
       console.error('AI 生成上下文失败', e)
     } finally {
@@ -193,7 +220,12 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
       industry: context.industry,
       techStack: techStackRaw.split(',').map((s) => s.trim()).filter(Boolean).map((name) => ({ name })),
       archSummary: context.archSummary ?? '',
-      avoid: context.avoid ?? [],
+      avoid: avoidRaw.split('\n').map((s) => s.trim()).filter(Boolean).map((line) => {
+        const match = line.match(/^(.+?)(?:\s*→\s*(.+?))?(?:\s*[（(](.+?)[）)])?$/)
+        return match
+          ? { item: match[1].trim(), useInstead: match[2]?.trim(), reason: match[3]?.trim() }
+          : { item: line }
+      }),
       rules: conventionsRaw.split('\n').map((s) => s.trim()).filter(Boolean).map((text) => ({ scope: 'all' as const, text, source: 'human' as const })),
       domainModel: context.domainModel ?? '',
       lessons,
@@ -415,6 +447,24 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
                 </button>
               </div>
 
+              <Field label="项目目标">
+                <input
+                  value={context.goal ?? ''}
+                  onChange={(e) => setContext((p) => ({ ...p, goal: e.target.value }))}
+                  placeholder="例：构建一站式 AI 研发协作平台"
+                  className={inputCls}
+                />
+              </Field>
+
+              <Field label="目标用户">
+                <input
+                  value={context.targetUsers ?? ''}
+                  onChange={(e) => setContext((p) => ({ ...p, targetUsers: e.target.value }))}
+                  placeholder="例：AI 研发团队、技术管理者"
+                  className={inputCls}
+                />
+              </Field>
+
               <Field label="行业领域">
                 <input
                   value={context.industry}
@@ -433,12 +483,42 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
                 />
               </Field>
 
+              <Field label="架构摘要">
+                <textarea
+                  value={context.archSummary ?? ''}
+                  onChange={(e) => setContext((p) => ({ ...p, archSummary: e.target.value }))}
+                  rows={2}
+                  placeholder="例：前后端分离，前端 React SPA + 后端 FastAPI REST，PostgreSQL 持久化"
+                  className={cn(inputCls, 'h-auto py-2 resize-none')}
+                />
+              </Field>
+
               <Field label="研发规范">
                 <textarea
                   value={conventionsRaw}
                   onChange={(e) => setConventionsRaw(e.target.value)}
                   rows={6}
                   placeholder={'每行一条规范，例：\nPRD 变更必须走版本评审\n阻塞超过 2 小时必须触发告警'}
+                  className={cn(inputCls, 'h-auto py-2 resize-none')}
+                />
+              </Field>
+
+              <Field label="禁止项">
+                <textarea
+                  value={avoidRaw}
+                  onChange={(e) => setAvoidRaw(e.target.value)}
+                  rows={3}
+                  placeholder={'每行一条，例：\nvar 声明 → const/let（作用域问题）\njQuery → React（项目已统一框架）'}
+                  className={cn(inputCls, 'h-auto py-2 resize-none')}
+                />
+              </Field>
+
+              <Field label="领域模型">
+                <textarea
+                  value={context.domainModel ?? ''}
+                  onChange={(e) => setContext((p) => ({ ...p, domainModel: e.target.value }))}
+                  rows={3}
+                  placeholder="描述核心领域概念、实体关系等"
                   className={cn(inputCls, 'h-auto py-2 resize-none')}
                 />
               </Field>

@@ -12,6 +12,24 @@ designSystem: "prototype-design-system.html v2"
 
 # UX Design Specification — AI-DZHT Agent 管理模块
 
+> **实现状态（2026-04-16）**
+>
+> | 页面 | 状态 | 说明 |
+> |---|---|---|
+> | P01 Agent 目录 | ✅ 仅 Mock | `AgentListPage.tsx` + MSW |
+> | P02 创建向导 — 基础信息 | ✅ 仅 Mock | `Step1BasicInfo.tsx` |
+> | P03 创建向导 — 能力选择 | ✅ 仅 Mock | `Step2Capabilities.tsx` |
+> | P04 创建向导 — 提示词 | ✅ 仅 Mock | `Step3Prompt.tsx` |
+> | P05 Agent 详情 | ✅ 仅 Mock | `AgentDetailPage.tsx` |
+> | P06 上下文配置 | ✅ 已实现 | `ProjectSettingsModal.tsx`（真实后端） |
+> | P07 Agent 编辑 | ✅ 仅 Mock | `EditAgentPage.tsx` |
+> | P08 命令库 | ✅ 仅 Mock | `CommandLibraryPage.tsx` |
+> | P09 版本历史 | ❌ 未实现 | Phase 2 |
+> | P10 运行实例管理 | ❌ 未实现 | Phase 2 |
+> | P11 共享管理 | ❌ 未实现 | Phase 3-4 |
+>
+> **注**：RBAC 权限控制延后至 Phase 2。当前所有页面无角色区分。
+
 **Author:** Zhangshanshan
 **Date:** 2026-04-13
 
