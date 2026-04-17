@@ -1,9 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Trash2, Loader2, AlertTriangle, Pencil, Settings, Package, FileText, X } from 'lucide-react'
+import { Trash2, Loader2, AlertTriangle, Pencil, Settings, FileText, X, GitBranch } from 'lucide-react'
 import { ProjectSettingsModal } from '@/components/project/ProjectSettingsModal'
 import { CommanderChatPanel } from '@/components/requirements/CommanderChatPanel'
+import { PipelineTopBar } from '@/components/requirements/PipelineTopBar'
+import { ArtifactSidebar } from '@/components/requirements/ArtifactSidebar'
 import { Badge } from '@/components/ui/Badge'
+import { LogStream } from '@/components/ui/LogStream'
+import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer'
 import { WorkflowConfigModal } from '@/components/requirements/WorkflowConfigModal'
 import { mockMembers } from '@/mocks/data/projects'
 import { cn } from '@/lib/utils'
@@ -26,7 +30,9 @@ import type {
   StoryStatus,
   StepArtifact,
   StepDetailResponse,
+  ReviewPolicy,
 } from '@/types/project'
+import { DEFAULT_REVIEW_POLICY } from '@/types/project'
 import type { ProjectStatus } from '@/types/project'
 
 type NewReqForm = {
@@ -91,7 +97,7 @@ export function ProjectDetailPage() {
   const [dismissModalStep, setDismissModalStep] = useState<PipelineStep | null>(null)
   const [dismissForm, setDismissForm] = useState({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
   // log streaming is handled inside <LogStream> component
-  const [detailTab, setDetailTab] = useState<'flow' | 'artifacts'>('flow')
+  const [artifactSidebarOpen, setArtifactSidebarOpen] = useState(false)
   const [viewingArtifact, setViewingArtifact] = useState<{ step: PipelineStep; art: StepArtifact } | null>(null)
   const [artifactContent, setArtifactContent] = useState<{ content: string; format: string } | null>(null)
   const [isArtifactLoading, setIsArtifactLoading] = useState(false)
@@ -202,6 +208,8 @@ export function ProjectDetailPage() {
     }
   }, [activeNode?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [artifactRetryKey, setArtifactRetryKey] = useState(0)
+
   useEffect(() => {
     if (!viewingArtifact || !selectedReq) { setArtifactContent(null); return }
     let cancelled = false
@@ -218,19 +226,33 @@ export function ProjectDetailPage() {
       reqId: selectedReq.id,
       stepId: viewingArtifact.step.id,
     }
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 30000)
     fetch('/api/v1/artifacts/content', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: ctrl.signal,
     })
-      .then((res) => res.json())
-      .then((data) => { if (!cancelled) { setArtifactContent(data); setIsArtifactLoading(false) } })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((data) => {
+        if (!cancelled && data?.content) {
+          setArtifactContent(data)
+          setIsArtifactLoading(false)
+        } else if (!cancelled) {
+          setArtifactContent(null)
+          setIsArtifactLoading(false)
+        }
+      })
       .catch(() => { if (!cancelled) { setArtifactContent(null); setIsArtifactLoading(false) } })
-    return () => { cancelled = true }
-  }, [viewingArtifact]) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; clearTimeout(timer); ctrl.abort() }
+  }, [viewingArtifact, artifactRetryKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    setDetailTab('flow')
+    setArtifactSidebarOpen(false)
   }, [selectedReqId])
 
   if (projectLoading) {
@@ -316,7 +338,7 @@ export function ProjectDetailPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--bg-base)]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* ── Page Hero Header ── */}
       <div className="border-b border-[var(--border)] bg-[var(--bg-base)]">
         <div className="mx-auto w-full max-w-[1600px] px-6 py-6">
@@ -385,9 +407,9 @@ export function ProjectDetailPage() {
         />
       )}
 
-      <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-6 py-6">
+      <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-6 py-6 min-h-0">
         {true && (
-          <section className="flex gap-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-panel)]" style={{ minHeight: '62vh' }}>
+          <section className="flex flex-1 gap-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] min-h-0">
             {/* ── Left: req list ── */}
             <div className="flex w-[268px] shrink-0 flex-col border-r border-[var(--border)]">
               {/* Header */}
@@ -426,7 +448,7 @@ export function ProjectDetailPage() {
               </div>
 
               {/* Card list */}
-              <div className="flex-1 overflow-y-auto space-y-1.5 p-2">
+              <div className="min-h-0 flex-1 overflow-y-auto space-y-1.5 p-2">
                 {filteredReqs.length === 0 && (
                   <p className="py-6 text-center text-[12px] text-[var(--text-3)]">暂无需求</p>
                 )}
@@ -509,30 +531,8 @@ export function ProjectDetailPage() {
               </div>
             </div>
 
-            {/* ── Middle: Commander Chat Panel ── */}
-            {selectedReq && (
-              <div className="flex w-[360px] shrink-0 flex-col border-r border-[var(--border)]">
-                <CommanderChatPanel
-                  projectId={project.id}
-                  requirement={selectedReq}
-                  onApproveStep={handleApproveStep}
-                  onDismissAdvisory={(step) => {
-                    setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
-                    setDismissModalStep(step)
-                  }}
-                  onViewArtifact={(stepId, art) => {
-                    const step = selectedReq.pipeline.find((s) => s.id === stepId)
-                    if (step) {
-                      setViewingArtifact({ step, art: { name: art.name, type: art.type as StepArtifact['type'], summary: art.summary } })
-                    }
-                  }}
-                  isApproving={approveStepMutation.isPending}
-                />
-              </div>
-            )}
-
-            {/* ── Right: workflow detail panel ── */}
-            <div className="flex flex-1 flex-col overflow-hidden">
+            {/* ── Right: main content area ── */}
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               {selectedReq ? (
                 <>
                   {/* Compact header */}
@@ -543,42 +543,17 @@ export function ProjectDetailPage() {
                             <span className="font-mono text-[11px] font-semibold text-[#58a6ff]">#{selectedReq.code}</span>
                             <Badge variant={statusBadge(selectedReq.status)}>{STATUS_LABEL[selectedReq.status]}</Badge>
                             <PriorityBadge priority={selectedReq.priority} />
+                            {selectedReq.pipeline.some((s) => s.status !== 'queued') && (
+                              <span className="inline-flex items-center gap-1 rounded-md border border-[rgba(88,166,255,0.25)] bg-[rgba(88,166,255,0.08)] px-1.5 py-0.5 font-mono text-[10px] text-[#58a6ff]">
+                                <GitBranch size={10} />
+                                req/{selectedReq.code}
+                              </span>
+                            )}
                           </div>
                           <h3 className="mt-1.5 text-[13px] font-semibold leading-snug text-[var(--text-1)]">{selectedReq.title}</h3>
                           <p className="mt-0.5 line-clamp-2 text-[11px] text-[var(--text-2)]">{selectedReq.summary}</p>
-                          {/* ── Stats bar ── */}
-                          {(() => {
-                            const total   = selectedReq.stories.length
-                            const active  = selectedReq.stories.filter((s) => s.status === 'running' || s.status === 'blocked').length
-                            const done    = selectedReq.stories.filter((s) => s.status === 'done').length
-                            const tokens  = selectedReq.tokenUsage ?? 0
-                            const nextStep =
-                              selectedReq.pipeline.find((s) => s.status === 'queued') ??
-                              selectedReq.stories.flatMap((st) => st.pipeline).find((s) => s.status === 'queued')
-                            return (
-                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-[var(--text-3)]">
-                                <span>STORIES&nbsp;<span className="font-bold text-[var(--text-1)]">{total}</span></span>
-                                <span className="select-none text-[var(--border)]">/</span>
-                                <span>ACTIVE&nbsp;<span className="font-bold text-[#58a6ff]">{active}</span></span>
-                                <span className="select-none text-[var(--border)]">/</span>
-                                <span>DONE&nbsp;<span className="font-bold text-[var(--success)]">{done}</span></span>
-                                {tokens > 0 && (
-                                  <>
-                                    <span className="select-none text-[var(--border)]">/</span>
-                                    <span>TOKEN&nbsp;<span className="font-bold text-[#58a6ff]">{tokens.toLocaleString()}</span></span>
-                                  </>
-                                )}
-                                {nextStep && (
-                                  <>
-                                    <span className="select-none text-[var(--border)]">/</span>
-                                    <span>NEXT APPROVAL&nbsp;<span className="font-bold text-[var(--warning)]">{nextStep.name}&nbsp;~20min</span></span>
-                                  </>
-                                )}
-                              </div>
-                            )
-                          })()}
                         </div>
-                        {/* ── 操作按钮组 ── */}
+                        {/* Action buttons */}
                         <div className="mt-0.5 flex shrink-0 items-center gap-1">
                           <button
                             onClick={() => {
@@ -606,171 +581,38 @@ export function ProjectDetailPage() {
                       </div>
                   </div>
 
-                  {/* Tab bar */}
-                  <div className="shrink-0 flex items-center border-b border-[var(--border)] px-5">
-                    {(['flow', 'artifacts'] as const).map((tab) => (
-                      <button
-                        key={tab}
-                        onClick={() => setDetailTab(tab)}
-                        className={cn(
-                          'flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-[11px] font-semibold transition-colors',
-                          detailTab === tab
-                            ? 'border-[var(--accent)] text-[var(--accent)]'
-                            : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-1)]',
-                        )}
-                      >
-                        {tab === 'flow' ? '流水线' : '产出物'}
-                        {tab === 'artifacts' && (() => {
-                          const n = [
-                            ...selectedReq.pipeline,
-                            ...selectedReq.stories.flatMap((s) => s.pipeline),
-                          ].filter((s) => s.status === 'done').length
-                          return n > 0 ? (
-                            <span className="rounded-full bg-[var(--accent-sub)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--accent)]">
-                              {n}
-                            </span>
-                          ) : null
-                        })()}
-                      </button>
-                    ))}
-                  </div>
+                  {/* Pipeline top bar */}
+                  <PipelineTopBar
+                    requirement={selectedReq}
+                    activeNodeId={activeNode?.id ?? null}
+                    onStepClick={(step) => setActiveNode(activeNode?.id === step.id ? null : step)}
+                  />
 
-                  {/* Flowchart body */}
-                  {detailTab === 'flow' && (
-                  <div className="flex-1 overflow-auto p-5">
-                    {/* ── Phase 1: req-level sequential nodes ── */}
-                    {selectedReq.pipeline.length > 0 && (
-                      <>
-                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">分析规划阶段</p>
-                        <div className="flex min-w-max items-stretch">
-                          {selectedReq.pipeline.map((step, idx) => (
-                            <div key={step.id} className="flex items-center">
-                              <FlowNode
-                                step={step}
-                                isActive={activeNode?.id === step.id}
-                                onClick={() => setActiveNode(activeNode?.id === step.id ? null : step)}
-                                onToggleApproval={() => {
-                                  const newPipeline = selectedReq.pipeline.map((s) =>
-                                    s.id === step.id ? { ...s, requiresApproval: !s.requiresApproval } : s,
-                                  )
-                                  patchMutation.mutate({
-                                    projectId: id!,
-                                    reqId: selectedReq.id,
-                                    pipeline: newPipeline,
-                                  })
-                                }}
-                              />
-                              {idx < selectedReq.pipeline.length - 1 && (
-                                <NodeArrow done={step.status === 'done'} />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-
-                    {/* ── Phase 2: parallel story lanes ── */}
-                    {selectedReq.stories.length > 0 && (
-                      <>
-                        <div className="my-5 flex items-center gap-3">
-                          <div className="h-px flex-1 bg-[#21262d]" />
-                          <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">
-                            Story 拆分 · {selectedReq.stories.length} 个并行
-                          </span>
-                          <div className="h-px flex-1 bg-[#21262d]" />
-                        </div>
-                        <div className="flex flex-col gap-5">
-                          {selectedReq.stories.map((story) => (
-                            <div key={story.id}>
-                              <div className="mb-2 flex items-center gap-2">
-                                <span className="font-mono text-[10px] font-bold text-[#58a6ff]">{story.code}</span>
-                                <span className="text-[11px] text-[var(--text-2)]">{story.title}</span>
-                                <NodeStatusBadge status={story.status} />
-                              </div>
-                              <div className="flex min-w-max items-stretch border-l-2 border-[#21262d] pl-4">
-                                {story.pipeline.map((step, idx) => (
-                                  <div key={step.id} className="flex items-center">
-                                    <FlowNode
-                                      step={step}
-                                      isActive={activeNode?.id === step.id}
-                                      onClick={() => setActiveNode(activeNode?.id === step.id ? null : step)}
-                                    />
-                                    {idx < story.pipeline.length - 1 && (
-                                      <NodeArrow done={step.status === 'done'} />
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-
-                    {selectedReq.pipeline.length === 0 && selectedReq.stories.length === 0 && (
-                      <div className="flex items-center gap-3 rounded-xl border border-dashed border-[var(--border)] px-4 py-6">
-                        <div className="text-[22px]">✦</div>
-                        <div>
-                          <p className="text-[12px] font-semibold text-[var(--text-2)]">流水线待启动</p>
-                          <p className="text-[11px] text-[var(--text-3)]">需求创建后系统将自动配置 Agent 流水线</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  )}
-
-                  {/* 产出物 tab */}
-                  {detailTab === 'artifacts' && (
-                    <div className="flex-1 overflow-auto p-5 space-y-5">
-                      {(() => {
-                        const allSteps = [
-                          ...selectedReq.pipeline,
-                          ...selectedReq.stories.flatMap((s) => s.pipeline),
-                        ].filter((s) => s.status === 'done')
-                        if (allSteps.length === 0) {
-                          return (
-                            <div className="flex flex-col items-center gap-3 py-16 text-[var(--text-3)]">
-                              <Package size={28} strokeWidth={1.5} />
-                              <p className="text-xs">暂无产出物，Agent 完成步骤后将在此显示</p>
-                            </div>
-                          )
+                  {/* Chat area + artifact sidebar */}
+                  <div className="relative min-h-0 flex-1 overflow-hidden">
+                    <CommanderChatPanel
+                      projectId={project.id}
+                      requirement={selectedReq}
+                      onApproveStep={handleApproveStep}
+                      onDismissAdvisory={(step) => {
+                        setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
+                        setDismissModalStep(step)
+                      }}
+                      onViewArtifact={(stepId, art) => {
+                        const step = selectedReq.pipeline.find((s) => s.id === stepId)
+                        if (step) {
+                          setViewingArtifact({ step, art: { name: art.name, type: art.type as StepArtifact['type'], summary: art.summary } })
                         }
-                        return allSteps.map((step) => {
-                          // 优先使用 pipeline step 上的真实产出物（来自 Commander 执行），没有才 fallback 到静态 mock
-                          const arts = (step.artifacts && step.artifacts.length > 0)
-                            ? step.artifacts.map((a) => ({ name: a.name, type: a.type as StepArtifact['type'] }))
-                            : (AGENT_ARTIFACTS_MAP[step.agentName] ?? [])
-                          if (arts.length === 0) return null
-                          return (
-                            <div key={step.id}>
-                              <div className="mb-2 flex items-center gap-2">
-                                <span className="text-[13px]">{stageIcon(step.name)}</span>
-                                <span className="text-[11px] font-semibold text-[var(--text-1)]">{step.agentName}</span>
-                                {step.role && <span className="text-[10px] text-[var(--text-3)]">{step.role}</span>}
-                                <NodeStatusBadge status={step.status} />
-                              </div>
-                              <div className="space-y-1.5 pl-5">
-                                {arts.map((art) => (
-                                  <button
-                                    key={art.name}
-                                    onClick={() => setViewingArtifact({ step, art: { name: art.name, type: art.type, summary: '' } })}
-                                    className="flex w-full items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 py-2.5 text-left hover:border-[var(--accent)] transition-colors"
-                                  >
-                                    <span className="text-[13px]">{artifactIcon(art.type)}</span>
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-[12px] font-semibold text-[var(--text-1)]">{art.name}</p>
-                                      <p className="text-[10px] text-[var(--text-3)]">{art.type}</p>
-                                    </div>
-                                    <FileText size={12} className="shrink-0 text-[var(--text-3)]" />
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        })
-                      })()}
-                    </div>
-                  )}
+                      }}
+                      isApproving={approveStepMutation.isPending}
+                    />
+                    <ArtifactSidebar
+                      open={artifactSidebarOpen}
+                      onToggle={() => setArtifactSidebarOpen((prev) => !prev)}
+                      requirement={selectedReq}
+                      onViewArtifact={(step, art) => setViewingArtifact({ step, art })}
+                    />
+                  </div>
                 </>
               ) : (
                 <div className="flex flex-1 items-center justify-center">
@@ -937,6 +779,48 @@ export function ProjectDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* ── 审查策略 编辑 ── */}
+            {selectedReq && (() => {
+              const policy: ReviewPolicy = activeNode.reviewPolicy ?? { ...DEFAULT_REVIEW_POLICY }
+              const ITEMS: { key: keyof ReviewPolicy; label: string }[] = [
+                { key: 'stepPause',   label: '命令间暂停' },
+                { key: 'adversarial', label: '对抗性审查' },
+                { key: 'edgeCase',    label: '边界用例审查' },
+                { key: 'structural',  label: '结构完整性审查' },
+              ]
+              const handleToggle = (key: keyof ReviewPolicy) => {
+                const updated = { ...policy, [key]: !policy[key] }
+                const newPipeline = selectedReq.pipeline.map((s) =>
+                  s.id === activeNode.id ? { ...s, reviewPolicy: updated } : s,
+                )
+                patchMutation.mutate({ projectId: project.id, reqId: selectedReq.id, pipeline: newPipeline })
+              }
+              return (
+                <div className="shrink-0 border-t border-[var(--border)] px-5 py-3">
+                  <p className="mb-2 text-[10px] font-semibold text-[var(--text-3)]">审查策略</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ITEMS.map(({ key, label }) => {
+                      const on = policy[key]
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => handleToggle(key)}
+                          className={cn(
+                            'rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all',
+                            on
+                              ? 'border-[rgba(52,199,89,0.5)] bg-[rgba(52,199,89,0.1)] text-[#3fb950]'
+                              : 'border-[var(--border)] bg-[var(--bg-panel-3)] text-[var(--text-2)] hover:border-[rgba(52,199,89,0.3)] hover:text-[var(--text-1)]',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
@@ -1197,14 +1081,18 @@ export function ProjectDetailPage() {
                 </div>
               )}
               {!isArtifactLoading && artifactContent && (
-                <div className="artifact-md">
-                  {renderMarkdown(artifactContent.content)}
-                </div>
+                <MarkdownRenderer content={artifactContent.content} />
               )}
               {!isArtifactLoading && !artifactContent && (
                 <div className="flex flex-col items-center gap-3 py-10 text-[var(--text-3)]">
                   <FileText size={24} strokeWidth={1.5} />
-                  <span className="text-xs">内容加载失败，请重试</span>
+                  <span className="text-xs">内容加载失败</span>
+                  <button
+                    onClick={() => setArtifactRetryKey((k) => k + 1)}
+                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-2)] hover:text-[var(--text-1)] hover:border-[var(--accent)] transition-colors"
+                  >
+                    重试
+                  </button>
                 </div>
               )}
             </div>
@@ -1313,83 +1201,6 @@ function InputField({ label, required, children }: { label: string; required?: b
 
 // ── Flow node components ───────────────────────────────────────────────────
 
-function FlowNode({ step, isActive, onClick, onToggleApproval }: {
-  step: PipelineStep; isActive: boolean; onClick: () => void; onToggleApproval?: () => void
-}) {
-  const cls =
-    step.status === 'done'                     ? 'border-[#30363d] bg-[#0d1117]' :
-    step.status === 'running'                  ? 'border-[rgba(88,166,255,0.55)] bg-[rgba(88,166,255,0.06)] shadow-[0_0_12px_rgba(88,166,255,0.18)]' :
-    step.status === 'blocked'                  ? 'border-[rgba(248,81,73,0.55)] bg-[rgba(248,81,73,0.06)]' :
-    step.status === 'pending_approval'         ? 'border-[rgba(255,159,10,0.55)] bg-[rgba(255,159,10,0.06)] shadow-[0_0_10px_rgba(255,159,10,0.15)]' :
-    step.status === 'pending_advisory_approval'? 'border-[rgba(255,214,10,0.5)] bg-[rgba(255,214,10,0.05)]' :
-                                                 'border-[#21262d] bg-[#0d1117] opacity-55'
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'relative flex w-[148px] shrink-0 flex-col rounded-xl border-[1.5px] p-3 text-left transition-all hover:brightness-110 active:scale-[0.98]',
-        cls,
-        isActive && 'ring-2 ring-[#58a6ff] ring-offset-1 ring-offset-[var(--bg-base)]',
-      )}
-    >
-      {step.status === 'running' && (
-        <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-xl bg-[linear-gradient(90deg,transparent,#58a6ff,transparent)]" />
-      )}
-      {step.status === 'pending_approval' && (
-        <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-xl bg-[linear-gradient(90deg,transparent,#ff9f0a,transparent)]" />
-      )}
-      {step.status === 'pending_advisory_approval' && (
-        <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-xl bg-[linear-gradient(90deg,transparent,#ffd60a,transparent)]" />
-      )}
-      {/* Agent name + status */}
-      <div className="mb-1.5 flex items-start justify-between gap-1">
-        <span className="text-[13px] font-bold leading-tight text-[var(--text-1)]">{step.agentName}</span>
-        <NodeStatusBadge status={step.status} />
-      </div>
-      {/* Role */}
-      {step.role && (
-        <span className="text-[10px] leading-tight text-[var(--text-3)]">{step.role}</span>
-      )}
-      {/* Commands */}
-      {step.commands && (
-        <span className="mt-2 font-mono text-[9px] text-[#58a6ff] opacity-80">{step.commands}</span>
-      )}
-      {/* Approval toggle — queued 状态可切换 */}
-      {onToggleApproval && step.status === 'queued' && (
-        <span
-          onClick={(e) => { e.stopPropagation(); onToggleApproval() }}
-          className={cn(
-            'mt-2 self-start cursor-pointer rounded border px-1.5 py-[2px] text-[8px] font-semibold leading-none transition-all',
-            step.requiresApproval
-              ? 'border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.1)] text-[#ff9f0a]'
-              : 'border-[var(--border)] bg-transparent text-[var(--text-3)]',
-          )}
-        >
-          {step.requiresApproval ? '需审批' : '自动'}
-        </span>
-      )}
-      {/* 非 queued 状态但标记了审批 — 只读标签 */}
-      {step.status !== 'queued' && step.requiresApproval && (
-        <span className="mt-2 self-start rounded border border-[rgba(255,159,10,0.4)] bg-[rgba(255,159,10,0.1)] px-1.5 py-[2px] text-[8px] font-semibold leading-none text-[#ff9f0a]">
-          需审批
-        </span>
-      )}
-    </button>
-  )
-}
-
-function NodeArrow({ done = false }: { done?: boolean }) {
-  return (
-    <div className="flex shrink-0 items-center">
-      <div className={cn('h-px w-8', done ? 'bg-[#3fb950]' : 'bg-[#30363d]')} />
-      <div className={cn(
-        'border-y-[5px] border-l-[7px] border-y-transparent',
-        done ? 'border-l-[#3fb950]' : 'border-l-[#30363d]',
-      )} />
-    </div>
-  )
-}
-
 function NodeStatusBadge({ status }: { status: PipelineStepStatus | StoryStatus }) {
   const map: Record<string, { label: string; cls: string }> = {
     done:                      { label: '已完成', cls: 'text-[#3fb950] border-[rgba(63,185,80,0.3)]  bg-[rgba(63,185,80,0.1)]' },
@@ -1472,201 +1283,7 @@ function StatChip({ label, value, color }: { label: string; value: number; color
   )
 }
 
-const AGENT_ARTIFACTS_MAP: Record<string, Array<{ name: string; type: StepArtifact['type'] }>> = {
-  Mary:    [{ name: '商业简报', type: 'report' }, { name: '竞品分析报告', type: 'report' }, { name: '项目背景文档', type: 'document' }],
-  John:    [{ name: '产品需求文档（PRD）', type: 'document' }, { name: '产品愿景说明', type: 'document' }, { name: 'Epic 列表', type: 'plan' }],
-  Sally:   [{ name: 'UI/UX 设计文档', type: 'design' }],
-  Winston: [{ name: '架构设计文档', type: 'document' }],
-  Bob:     [{ name: 'Sprint 计划', type: 'plan' }, { name: 'User Story 列表', type: 'plan' }],
-  Amelia:  [{ name: '功能代码实现', type: 'code' }],
-  Quinn:   [{ name: '自动化测试报告', type: 'test' }, { name: '代码评审报告', type: 'report' }],
-  Barry:   [{ name: '快速开发产物', type: 'code' }],
-  Paige:   [{ name: '技术文档', type: 'document' }],
-}
 
-function renderMarkdown(md: string): React.ReactNode {
-  const lines = md.split('\n')
-  const nodes: React.ReactNode[] = []
-  lines.forEach((line, i) => {
-    if (line.startsWith('### ')) {
-      nodes.push(<h3 key={i} className="mt-4 mb-1.5 text-[13px] font-bold text-[var(--text-1)]">{line.slice(4)}</h3>)
-    } else if (line.startsWith('## ')) {
-      nodes.push(<h2 key={i} className="mt-5 mb-2 text-[14px] font-bold text-[var(--text-1)]">{line.slice(3)}</h2>)
-    } else if (line.startsWith('# ')) {
-      nodes.push(<h1 key={i} className="mt-6 mb-2 text-[15px] font-bold text-[var(--text-1)]">{line.slice(2)}</h1>)
-    } else if (line.startsWith('---')) {
-      nodes.push(<hr key={i} className="my-3 border-[var(--border)]" />)
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      nodes.push(<li key={i} className="ml-4 list-disc text-[12px] text-[var(--text-2)]">{line.slice(2)}</li>)
-    } else if (line.trim() === '') {
-      nodes.push(<div key={i} className="h-2" />)
-    } else {
-      nodes.push(<p key={i} className="text-[12px] leading-relaxed text-[var(--text-2)]">{line}</p>)
-    }
-  })
-  return <>{nodes}</>
-}
-
-
-// ── LogStream (Claude 终端风格：结构化行块 + spinner + 可展开 tool result) ─────
-
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
-const LOG_TAG_COLOR: Record<string, string> = {
-  init:     '#6e7681',
-  analysis: '#79c0ff',
-  writing:  '#79c0ff',
-  planning: '#a5d6ff',
-  design:   '#79c0ff',
-  code:     '#79c0ff',
-  review:   '#8b949e',
-  decision: '#e3b341',
-  output:   '#3fb950',
-}
-
-type LogGroup = {
-  id: number
-  tag: string
-  content: string
-  detail?: string
-  isOutput: boolean
-  isFix: boolean
-}
-
-function buildLogGroups(lines: Array<{ time: string; text: string }>): LogGroup[] {
-  const groups: LogGroup[] = []
-  let id = 0
-  for (const line of lines) {
-    const text = line.text
-    const m = text.match(/^\[([^\]]+)\]\s*(.*)$/)
-    if (!m) {
-      groups.push({ id: id++, tag: '', content: text, isOutput: text.includes('✓'), isFix: false })
-      continue
-    }
-    const [, tag, content] = m
-    if (tag === 'result') {
-      const last = groups[groups.length - 1]
-      if (last?.tag.startsWith('tool:')) { last.detail = content; continue }
-    }
-    groups.push({
-      id: id++, tag, content,
-      isOutput: tag === 'output',
-      isFix: tag === 'fix' || tag === 'debug',
-    })
-  }
-  return groups
-}
-
-const LogStream = React.memo(function LogStream({
-  lines,
-}: {
-  lines: Array<{ time: string; text: string }>
-}) {
-  const containerRef = React.useRef<HTMLDivElement>(null)
-  const [spinnerFrame, setSpinnerFrame] = React.useState(0)
-  const [expandedIds, setExpandedIds]   = React.useState<Set<number>>(new Set())
-
-  // Spinner 帧动画（80ms/帧）
-  React.useEffect(() => {
-    const id = setInterval(() => setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length), 80)
-    return () => clearInterval(id)
-  }, [])
-
-  // 新行出现时自动滚到底部
-  React.useEffect(() => {
-    const el = containerRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [lines])
-
-  const groups = buildLogGroups(lines)
-
-  const toggle = (gid: number) =>
-    setExpandedIds((prev) => { const s = new Set(prev); s.has(gid) ? s.delete(gid) : s.add(gid); return s })
-
-  return (
-    <div
-      ref={containerRef}
-      className="rounded-xl border border-[var(--border)] bg-[#0d1117] px-3 py-2.5 font-mono h-[260px] overflow-y-auto"
-    >
-      {groups.length === 0 ? (
-        <div className="flex items-center gap-1.5 py-1 text-[10px] text-[#3d444d]">
-          <span className="animate-pulse text-[#58a6ff]">▌</span>
-          <span>connecting...</span>
-        </div>
-      ) : (
-        <div>
-          {groups.map((g, idx) => {
-            const isLast    = idx === groups.length - 1
-            const isRunning = isLast && !g.isOutput
-            const isTool    = g.tag.startsWith('tool:')
-            const toolName  = isTool ? g.tag.slice(5) : null
-            const hasDetail = isTool && !!g.detail
-            const isExpanded = expandedIds.has(g.id)
-
-            const tagColor = g.isFix ? '#f0883e'
-              : g.isOutput ? '#3fb950'
-              : isTool ? '#79c0ff'
-              : LOG_TAG_COLOR[g.tag] ?? '#6e7681'
-
-            const titleColor = isRunning ? '#e6edf3'
-              : g.isOutput ? '#3fb950'
-              : g.isFix ? '#f0883e'
-              : '#6e7681'
-
-            const statusIcon = isRunning
-              ? <span style={{ color: '#58a6ff' }}>{SPINNER_FRAMES[spinnerFrame]}</span>
-              : g.isOutput
-              ? <span style={{ color: '#3fb950' }}>✓</span>
-              : <span style={{ color: '#3d444d' }}>✓</span>
-
-            return (
-              <div key={g.id} className="py-[3px]">
-                {/* 主行 */}
-                <div
-                  className={`flex items-start gap-1.5 text-[11px] leading-relaxed select-none ${hasDetail ? 'cursor-pointer hover:bg-[rgba(255,255,255,0.03)] rounded px-0.5' : ''}`}
-                  onClick={hasDetail ? () => toggle(g.id) : undefined}
-                >
-                  {/* 状态图标 */}
-                  <span className="w-3.5 shrink-0 text-[12px]">{statusIcon}</span>
-
-                  {/* Tag 标签 */}
-                  {g.tag && (
-                    <span className="shrink-0 w-[72px] text-[10px] font-bold truncate" style={{ color: tagColor }}>
-                      {toolName ?? g.tag}
-                    </span>
-                  )}
-
-                  {/* 分隔符 */}
-                  {g.tag && <span className="shrink-0 text-[#3d444d]">·</span>}
-
-                  {/* 内容 */}
-                  <span className="flex-1 min-w-0 break-words" style={{ color: titleColor }}>
-                    {g.content}
-                    {isRunning && <span className="ml-0.5 text-[#58a6ff]">▌</span>}
-                  </span>
-
-                  {/* 展开箭头 */}
-                  {hasDetail && (
-                    <span className="shrink-0 text-[9px] text-[#3d444d] ml-1">
-                      {isExpanded ? '▴' : '▾'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Tool result 展开内容 */}
-                {hasDetail && isExpanded && (
-                  <div className="ml-5 mt-0.5 mb-1 pl-2.5 border-l-2 border-[#21262d] text-[10px] leading-relaxed" style={{ color: '#6e7681' }}>
-                    {g.detail}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-})
 
 // defaultPipeline kept for reference — pipeline is now built by WorkflowConfigModal
 export function defaultPipeline(): PipelineStep[] {

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useScrollLock } from '@/hooks/useScrollLock'
 import { X, ChevronDown, ChevronRight, Copy, Check, AlertCircle, Loader2, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildWorkflowSuggestPrompt } from '@/lib/buildWorkflowPrompt'
 import { useWorkflowSuggest } from '@/hooks/useWorkflowSuggest'
-import type { PipelineStep, ProjectContext } from '@/types/project'
+import type { PipelineStep, ProjectContext, ReviewPolicy } from '@/types/project'
+import { DEFAULT_REVIEW_POLICY } from '@/types/project'
 import type { AgentRole } from '@/types/agent'
 
 // ── 每个 Agent 角色的元信息（与 FlowNode / getStepDetail 保持一致）────
@@ -141,6 +143,7 @@ interface StepState extends TemplateStep {
   enabled: boolean
   enabledCommands: string[]
   requiresApproval: boolean
+  reviewPolicy: ReviewPolicy
 }
 
 function templateToStepStates(template: WorkflowTemplate): StepState[] {
@@ -149,6 +152,7 @@ function templateToStepStates(template: WorkflowTemplate): StepState[] {
     enabled: true,
     enabledCommands: (AGENT_COMMANDS[s.agentRole] ?? []).map((c) => c.code),
     requiresApproval: false,
+    reviewPolicy: { ...DEFAULT_REVIEW_POLICY },
   }))
 }
 
@@ -175,6 +179,8 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
   const [aiApplied, setAiApplied] = useState(false)
 
   const { mutate: fetchSuggest, data: suggestion, isPending: isSuggesting, isError: isSuggestError } = useWorkflowSuggest()
+
+  useScrollLock(open)
 
   // 打开时自动触发 AI 分析
   useEffect(() => {
@@ -234,6 +240,15 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
     )
   }
 
+  // 切换单个审查策略开关
+  const toggleReviewPolicy = (idx: number, key: keyof ReviewPolicy) => {
+    setSteps((prev) =>
+      prev.map((s, i) =>
+        i === idx ? { ...s, reviewPolicy: { ...s.reviewPolicy, [key]: !s.reviewPolicy[key] } } : s,
+      ),
+    )
+  }
+
   // 切换单个命令
   const toggleCommand = (stepIdx: number, code: string) => {
     setSteps((prev) =>
@@ -270,13 +285,14 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
           agentRole: s.agentRole,
           enabledCommands: s.enabledCommands,
           requiresApproval: s.requiresApproval,
+          reviewPolicy: s.reviewPolicy,
         }
       })
     onConfirm(pipeline)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4">
       <div
         className="flex w-full max-w-[820px] flex-col rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-lg)]"
         style={{ maxHeight: '88vh' }}
@@ -390,7 +406,7 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
         <div className="flex min-h-0 flex-1 overflow-hidden">
 
           {/* Left: 模板选择 */}
-          <div className="flex w-[192px] shrink-0 flex-col gap-2 border-r border-[var(--border)] p-3">
+          <div className="flex w-[192px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-[var(--border)] p-3">
             <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">
               内置模板
             </p>
@@ -576,6 +592,38 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
                         </button>
                       )
                     })}
+                  </div>
+
+                  {/* ── 审查策略 ── */}
+                  <div className="mt-4 border-t border-[var(--border)] pt-3">
+                    <p className="mb-2 text-[10px] font-semibold text-[var(--text-2)]">审查策略</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(
+                        [
+                          { key: 'stepPause',    label: '命令间暂停',   desc: '每条命令执行后等待用户点击继续' },
+                          { key: 'adversarial',  label: '对抗性审查',   desc: '检查逻辑缺口、未验证假设' },
+                          { key: 'edgeCase',     label: '边界用例审查', desc: '检查边界条件、异常路径' },
+                          { key: 'structural',   label: '结构完整性审查', desc: '检查章节结构与完整性' },
+                        ] as { key: keyof ReviewPolicy; label: string; desc: string }[]
+                      ).map(({ key, label, desc }) => {
+                        const on = step.reviewPolicy[key]
+                        return (
+                          <button
+                            key={key}
+                            title={desc}
+                            onClick={() => toggleReviewPolicy(expandedStep, key)}
+                            className={cn(
+                              'rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all',
+                              on
+                                ? 'border-[rgba(52,199,89,0.5)] bg-[rgba(52,199,89,0.1)] text-[#3fb950]'
+                                : 'border-[var(--border)] bg-[var(--bg-panel-3)] text-[var(--text-2)] hover:border-[rgba(52,199,89,0.3)] hover:text-[var(--text-1)]',
+                            )}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
               )

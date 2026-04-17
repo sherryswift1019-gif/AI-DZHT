@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2, X, Sparkles, ChevronDown, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useScrollLock } from '@/hooks/useScrollLock'
 import { mockMembers } from '@/mocks/data/projects'
 import type { ContextLesson, EnvLink, Project, ProjectContext, ProjectSettings, ProjectStatus } from '@/types/project'
 import { usePatchProject } from '@/hooks/useProjects'
@@ -69,6 +70,8 @@ interface Props {
 export function ProjectSettingsModal({ open, project, onClose }: Props) {
   const patchMutation = usePatchProject()
   const [activeTab, setActiveTab] = useState<Tab>('basic')
+
+  useScrollLock(open)
 
   // Basic form state
   const [basic, setBasic] = useState<BasicForm>(toBasicForm(project))
@@ -264,7 +267,7 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4">
       <div className="flex h-[620px] w-full max-w-[680px] flex-col rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-lg)]">
 
         {/* Header */}

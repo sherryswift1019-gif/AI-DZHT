@@ -142,6 +142,13 @@ class PipelineStepArtifact(BaseModel):
     summary: str = ""
 
 
+class ReviewPolicy(BaseModel):
+    stepPause: bool = True      # 命令执行间是否暂停等用户确认
+    adversarial: bool = True    # 对抗性审查
+    edgeCase: bool = True       # 边界用例审查
+    structural: bool = False    # 结构完整性审查
+
+
 class PipelineStepModel(BaseModel):
     id: str
     name: str
@@ -155,6 +162,7 @@ class PipelineStepModel(BaseModel):
     requiresApproval: Optional[bool] = None
     advisoryConcern: Optional[str] = None
     artifacts: Optional[list[PipelineStepArtifact]] = None
+    reviewPolicy: Optional[ReviewPolicy] = None
 
 
 class StoryModel(BaseModel):

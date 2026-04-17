@@ -298,15 +298,20 @@ def save_artifact(
     req_id: str, step_id: str, name: str, type_: str,
     summary: str, content: str, fmt: str = "markdown"
 ) -> str:
-    """Upsert an artifact by (req_id, step_id, name). Returns the artifact id."""
+    """Upsert an artifact by (req_id, step_id, name). Returns the artifact id.
+    Will NOT overwrite existing content with empty content."""
     with engine.begin() as conn:
         existing = conn.execute(
-            select(artifacts_table.c.id)
+            select(artifacts_table.c.id, artifacts_table.c.content)
             .where(artifacts_table.c.req_id == req_id)
             .where(artifacts_table.c.step_id == step_id)
             .where(artifacts_table.c.name == name)
         ).fetchone()
         if existing:
+            # 不允许用空内容覆盖已有内容
+            if not content or not content.strip():
+                if existing.content and existing.content.strip():
+                    return existing.id
             conn.execute(
                 update(artifacts_table)
                 .where(artifacts_table.c.id == existing.id)

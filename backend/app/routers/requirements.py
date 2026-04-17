@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+from pydantic import BaseModel
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from ..models import (
     RequirementOut,
@@ -24,7 +25,8 @@ from ..storage import (
     delete_commander_events,
     sync_project_status,
 )
-from ..workflow_engine import run_commander
+from ..workflow_engine import run_commander, abort_pipeline, restart_pipeline, resume_pipeline
+from ..llm import signal_step_continue
 
 router = APIRouter(prefix="/api/v1/projects", tags=["requirements"])
 
@@ -297,3 +299,83 @@ def submit_user_input(
             "message": f"用户已回复。该步骤尚未执行完毕，请再次调用 invoke_agent(step_id='{step_id}') 继续执行。",
         })
     return req
+
+
+# ── 中止 / 重启 / 恢复端点 ──────────────────────────────────────────────────────
+
+@router.post("/{project_id}/requirements/{req_id}/abort")
+async def abort_requirement(project_id: str, req_id: str) -> dict:
+    """中止正在运行的流水线。"""
+    _ensure_project(project_id)
+    req = get_requirement(req_id)
+    if not req or req["projectId"] != project_id:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    if req["status"] not in ("running", "blocked"):
+        raise HTTPException(status_code=400, detail="Requirement is not running")
+    await abort_pipeline(req_id)
+    return {"status": "aborted"}
+
+
+@router.post("/{project_id}/requirements/{req_id}/restart",
+             response_model=RequirementOut)
+def restart_requirement(
+    project_id: str, req_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """从头重跑流水线：重置所有步骤，清空历史。"""
+    _ensure_project(project_id)
+    req = get_requirement(req_id)
+    if not req or req["projectId"] != project_id:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    if req["status"] not in ("blocked", "done"):
+        raise HTTPException(status_code=400,
+                            detail="Only blocked/done requirements can be restarted")
+    req = restart_pipeline(req_id, project_id)
+    background_tasks.add_task(run_commander, req_id, project_id)
+    return req
+
+
+@router.post("/{project_id}/requirements/{req_id}/resume",
+             response_model=RequirementOut)
+def resume_requirement(
+    project_id: str, req_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """从断点恢复流水线：blocked 步骤重置为 queued。"""
+    _ensure_project(project_id)
+    req = get_requirement(req_id)
+    if not req or req["projectId"] != project_id:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    if req["status"] != "blocked":
+        raise HTTPException(status_code=400,
+                            detail="Only blocked requirements can be resumed")
+    req = resume_pipeline(req_id)
+    background_tasks.add_task(run_commander, req_id, project_id)
+    return req
+
+
+# ── 命令级继续执行端点 ──────────────────────────────────────────────────────────
+
+class ContinueStepBody(BaseModel):
+    feedback: str = ""
+
+
+@router.post("/{project_id}/requirements/{req_id}/continue-step/{step_id}")
+def continue_step(
+    project_id: str, req_id: str, step_id: str,
+    body: ContinueStepBody,
+) -> dict:
+    """在命令级暂停后，确认继续执行下一个命令。"""
+    _ensure_project(project_id)
+    req = get_requirement(req_id)
+    if not req or req["projectId"] != project_id:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    ok = signal_step_continue(req_id, step_id, body.feedback)
+    if not ok:
+        raise HTTPException(status_code=400, detail="No paused step found")
+    save_commander_event(
+        req_id, "step_continued", "user", "",
+        body.feedback or "用户确认继续",
+        {"step_id": step_id},
+    )
+    return {"status": "continued"}

@@ -97,6 +97,20 @@ export interface Project {
   budget?: number
 }
 
+export interface ReviewPolicy {
+  stepPause: boolean      // 命令执行间是否暂停等用户确认
+  adversarial: boolean    // 对抗性审查
+  edgeCase: boolean       // 边界用例审查
+  structural: boolean     // 结构完整性审查
+}
+
+export const DEFAULT_REVIEW_POLICY: ReviewPolicy = {
+  stepPause: true,
+  adversarial: true,
+  edgeCase: true,
+  structural: false,
+}
+
 export interface PipelineStep {
   id: string
   name: string
@@ -110,6 +124,7 @@ export interface PipelineStep {
   requiresApproval?: boolean    // 配置阶段设定的强制审批标记
   advisoryConcern?: string      // 指挥官建议性审批时的顾虑说明
   artifacts?: Array<{ name: string; type: string; summary: string }>  // Commander 执行后的真实产出物
+  reviewPolicy?: ReviewPolicy   // 审查策略（不设则用系统默认）
 }
 
 export type StoryStatus = 'queued' | 'running' | 'blocked' | 'done'
@@ -265,6 +280,10 @@ export type CommanderEventType =
   | 'user_input_request'
   | 'user_input_response'
   | 'system_info'
+  | 'pipeline_aborted'
+  | 'pipeline_resumed'
+  | 'step_paused'
+  | 'step_continued'
 
 export type CommanderEventRole = 'commander' | 'agent' | 'user' | 'system'
 

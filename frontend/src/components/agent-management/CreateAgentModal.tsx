@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
+import { useScrollLock } from '@/hooks/useScrollLock'
 import { WizardShell } from './WizardShell'
 import { Step1BasicInfo } from '@/pages/agent-management/wizard/Step1BasicInfo'
 import { Step2Capabilities } from '@/pages/agent-management/wizard/Step2Capabilities'
@@ -14,6 +15,8 @@ interface CreateAgentModalProps {
 export function CreateAgentModal({ open, onClose }: CreateAgentModalProps) {
   const { step, reset } = useWizardStore()
 
+  useScrollLock(open)
+
   useEffect(() => {
     if (open) reset()
   }, [open, reset])
@@ -22,7 +25,7 @@ export function CreateAgentModal({ open, onClose }: CreateAgentModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="relative flex w-full max-w-[860px] flex-col rounded-2xl border border-[var(--border)] bg-[var(--bg-base)] shadow-[var(--shadow-lg)]"

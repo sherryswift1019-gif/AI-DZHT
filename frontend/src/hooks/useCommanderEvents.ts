@@ -117,3 +117,75 @@ export function useSubmitUserInput() {
     },
   })
 }
+
+// ── 中止流水线 ──────────────────────────────────────────────────────────────────
+
+export function useAbortPipeline() {
+  const qc = useQueryClient()
+  return useMutation<{ status: string }, Error, { projectId: string; reqId: string }>({
+    mutationFn: async ({ projectId, reqId }) => {
+      const res = await fetch(`${BASE}/${projectId}/requirements/${reqId}/abort`, { method: 'POST' })
+      if (!res.ok) throw new Error(`Failed to abort (${res.status})`)
+      return res.json()
+    },
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+    },
+  })
+}
+
+// ── 重新开始流水线 ──────────────────────────────────────────────────────────────
+
+export function useRestartPipeline() {
+  const qc = useQueryClient()
+  return useMutation<Requirement, Error, { projectId: string; reqId: string }>({
+    mutationFn: async ({ projectId, reqId }) => {
+      const res = await fetch(`${BASE}/${projectId}/requirements/${reqId}/restart`, { method: 'POST' })
+      if (!res.ok) throw new Error(`Failed to restart (${res.status})`)
+      return res.json() as Promise<Requirement>
+    },
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+    },
+  })
+}
+
+// ── 从断点恢复流水线 ────────────────────────────────────────────────────────────
+
+export function useResumePipeline() {
+  const qc = useQueryClient()
+  return useMutation<Requirement, Error, { projectId: string; reqId: string }>({
+    mutationFn: async ({ projectId, reqId }) => {
+      const res = await fetch(`${BASE}/${projectId}/requirements/${reqId}/resume`, { method: 'POST' })
+      if (!res.ok) throw new Error(`Failed to resume (${res.status})`)
+      return res.json() as Promise<Requirement>
+    },
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+    },
+  })
+}
+
+// ── 命令级继续执行 ──────────────────────────────────────────────────────────────
+
+export function useContinueStep() {
+  const qc = useQueryClient()
+  return useMutation<{ status: string }, Error,
+    { projectId: string; reqId: string; stepId: string; feedback?: string }>({
+    mutationFn: async ({ projectId, reqId, stepId, feedback }) => {
+      const res = await fetch(
+        `${BASE}/${projectId}/requirements/${reqId}/continue-step/${stepId}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feedback: feedback ?? '' }),
+        },
+      )
+      if (!res.ok) throw new Error(`Failed to continue step (${res.status})`)
+      return res.json()
+    },
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+    },
+  })
+}

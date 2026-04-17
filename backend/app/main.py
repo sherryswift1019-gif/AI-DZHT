@@ -99,12 +99,19 @@ async def step_stream(
 
 @app.post("/api/v1/artifacts/content", response_model=ArtifactContentResponse)
 async def artifact_content(req: ArtifactContentRequest) -> ArtifactContentResponse:
+    import logging
+    logging.warning(f"[ARTIFACT-REQ] name={req.artifactName!r} reqId={req.reqId!r} stepId={req.stepId!r} agent={req.agentName!r}")
     if req.reqId and req.stepId:
         stored = get_artifact_by_name(req.reqId, req.stepId, req.artifactName)
-        if stored:
+        if stored and stored["content"] and stored["content"].strip():
             fmt = stored["format"] if stored["format"] in ("markdown", "code") else "markdown"
+            logging.warning(f"[ARTIFACT-RES] DB hit, content_len={len(stored['content'])}")
             return ArtifactContentResponse(content=stored["content"], format=fmt)
+        logging.warning(f"[ARTIFACT-RES] DB miss or empty, falling back to LLM")
     try:
-        return await get_artifact_content(req)
+        result = await get_artifact_content(req)
+        logging.warning(f"[ARTIFACT-RES] LLM ok, content_len={len(result.content)}")
+        return result
     except RuntimeError as exc:
+        logging.warning(f"[ARTIFACT-RES] LLM error: {exc}")
         raise HTTPException(status_code=422, detail=str(exc))

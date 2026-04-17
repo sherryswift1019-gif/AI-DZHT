@@ -21,6 +21,48 @@ from .models import (
 from .context import assemble_context
 
 
+# ── 延迟引用 workflow_engine 注册表（避免循环导入） ────────────────────────────
+
+def _active_procs_ref() -> dict:
+    from .workflow_engine import _active_processes
+    return _active_processes
+
+def _current_req_id_get() -> str:
+    from .workflow_engine import current_req_id
+    return current_req_id.get("")
+
+
+# ── 命令级暂停/继续机制 ──────────────────────────────────────────────────────────
+
+_step_pause_events: dict[str, asyncio.Event] = {}
+_step_feedback: dict[str, str] = {}
+
+
+def register_step_pause(req_id: str, step_id: str) -> asyncio.Event:
+    key = f"{req_id}:{step_id}"
+    evt = asyncio.Event()
+    _step_pause_events[key] = evt
+    return evt
+
+
+def signal_step_continue(req_id: str, step_id: str, feedback: str = "") -> bool:
+    key = f"{req_id}:{step_id}"
+    evt = _step_pause_events.get(key)
+    if not evt:
+        return False
+    if feedback:
+        _step_feedback[key] = feedback
+    evt.set()
+    return True
+
+
+def cleanup_step_pause(req_id: str) -> None:
+    to_del = [k for k in _step_pause_events if k.startswith(f"{req_id}:")]
+    for k in to_del:
+        _step_pause_events.pop(k, None)
+        _step_feedback.pop(k, None)
+
+
 # ── Config & client management ───────────────────────────────────────────────
 
 @dataclass
@@ -105,7 +147,7 @@ async def _chat_openai(
     max_tokens: int,
     json_mode: bool = False,
 ) -> str:
-    client = AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key)
+    client = AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key, timeout=300.0)
     kwargs: dict = {
         "model": cfg.model,
         "max_tokens": max_tokens,
@@ -135,7 +177,17 @@ async def _chat_anthropic(
         stderr=asyncio.subprocess.PIPE,
         env=env,
     )
-    stdout, stderr = await proc.communicate(prompt.encode())
+    rid = _current_req_id_get()
+    if rid:
+        _active_procs_ref().setdefault(rid, []).append(proc)
+    try:
+        stdout, stderr = await proc.communicate(prompt.encode())
+    finally:
+        if rid:
+            try:
+                _active_procs_ref().get(rid, []).remove(proc)
+            except ValueError:
+                pass
 
     if proc.returncode != 0:
         # CLI returns error details as JSON on stdout
@@ -174,7 +226,7 @@ async def _stream_openai(
     messages: list[dict],
     max_tokens: int,
 ) -> AsyncIterator[str]:
-    client = AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key)
+    client = AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key, timeout=300.0)
     stream = await client.chat.completions.create(
         model=cfg.model,
         max_tokens=max_tokens,
@@ -230,12 +282,69 @@ async def _stream_anthropic(
 
 # ── Helper: extract JSON from model output ───────────────────────────────────
 
+def _repair_json_strings(fragment: str) -> str:
+    """仅转义 JSON 字符串值内部的控制字符，不影响 JSON 结构换行。"""
+    result = []
+    in_string = False
+    i = 0
+    while i < len(fragment):
+        c = fragment[i]
+        if c == '\\' and in_string:
+            # 已转义字符，原样保留两个字符
+            result.append(c)
+            i += 1
+            if i < len(fragment):
+                result.append(fragment[i])
+            i += 1
+            continue
+        if c == '"':
+            in_string = not in_string
+            result.append(c)
+        elif in_string and c == '\n':
+            result.append('\\n')
+        elif in_string and c == '\r':
+            result.append('\\r')
+        elif in_string and c == '\t':
+            result.append('\\t')
+        else:
+            result.append(c)
+        i += 1
+    return ''.join(result)
+
+
+def _strip_code_fence(raw: str) -> str:
+    """剥除 LLM 输出中可能包裹的 Markdown 代码块（```json ... ``` 等）。"""
+    s = raw.strip()
+    if s.startswith("```"):
+        nl = s.find("\n")
+        if nl != -1:
+            s = s[nl + 1:]
+        if s.endswith("```"):
+            s = s[:-3].rstrip()
+    return s
+
+
 def _extract_json(raw: str) -> dict:
+    # 先剥除可能的 Markdown 代码块包裹
+    raw = _strip_code_fence(raw)
+
     start = raw.find("{")
     end = raw.rfind("}") + 1
     if start == -1 or end == 0:
         raise ValueError(f"模型未返回有效 JSON: {raw[:200]}")
-    return json.loads(raw[start:end])
+    fragment = raw[start:end]
+    try:
+        return json.loads(fragment)
+    except json.JSONDecodeError:
+        # 修复：仅转义字符串值内部的控制字符（不破坏 JSON 结构换行）
+        repaired = _repair_json_strings(fragment)
+        # 移除尾逗号 (,} 或 ,])
+        import re
+        repaired = re.sub(r',\s*([}\]])', r'\1', repaired)
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            raise ValueError(f"模型返回的 JSON 无法解析: {fragment[:300]}")
 
 
 # ── Tool-calling chat (for Commander agent) ─────────────────────────────────
@@ -264,7 +373,7 @@ async def _chat_with_tools_openai(
     tools: list[dict],
     max_tokens: int,
 ) -> dict:
-    client = AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key)
+    client = AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key, timeout=300.0)
     resp = await client.chat.completions.create(
         model=cfg.model,
         max_tokens=max_tokens,
@@ -430,7 +539,17 @@ async def _chat_with_tools_anthropic(
             stderr=asyncio.subprocess.PIPE,
             env=env,
         )
-        stdout, stderr = await proc.communicate(user_prompt.encode())
+        rid = _current_req_id_get()
+        if rid:
+            _active_procs_ref().setdefault(rid, []).append(proc)
+        try:
+            stdout, stderr = await proc.communicate(user_prompt.encode())
+        finally:
+            if rid:
+                try:
+                    _active_procs_ref().get(rid, []).remove(proc)
+                except ValueError:
+                    pass
 
         if proc.returncode != 0:
             try:
@@ -948,10 +1067,27 @@ _CMD_NAMES: dict[str, str] = {
     "WD": "编写文档", "MG": "Mermaid 图表", "VD": "验证文档", "EC": "解释概念",
 }
 
+
+def _find_skip_cmd_idx(feedback: str, cmd_codes: list[str], from_idx: int) -> int:
+    """根据用户反馈查找要跳转到的命令索引。
+
+    先匹配命令码（如 "CB"），再匹配中文名（如 "产品简报"）。
+    返回目标命令的索引，-1 表示无需跳转。
+    """
+    feedback_upper = feedback.upper()
+    for i in range(from_idx, len(cmd_codes)):
+        code = cmd_codes[i]
+        if code in feedback_upper:
+            return i
+        name = _CMD_NAMES.get(code, "")
+        if name and name in feedback:
+            return i
+    return -1
+
 _CMD_REVIEW_POLICY: dict[str, int] = {
-    "CP": 3, "EP": 3,              # PRD 类：完整三轮审查
-    "MR": 2, "DR": 2, "CB": 2,     # 研究/报告类：两轮
-    "BP": 1, "TR": 1,              # 发散/探索类：一轮结构审查
+    "CP": 2, "EP": 2,              # PRD 类：两轮审查
+    "MR": 1, "DR": 1, "CB": 1,     # 研究/报告类：一轮结构审查
+    "BP": 0, "TR": 0,              # 发散/探索类：跳过审查
     "VP": 0,                        # 验证命令本身就是审查，跳过
 }
 
@@ -1008,7 +1144,16 @@ async def _execute_single_command(
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        data = _extract_json(raw)
+        try:
+            data = _extract_json(raw)
+        except ValueError:
+            # 最后 fallback：将原始文本作为产出物内容
+            return {
+                "name": cmd_name,
+                "type": "document",
+                "summary": f"{cmd_name} 产出（JSON 解析失败，已保留原始内容）",
+                "content": raw,
+            }
     return data.get("artifact", {})
 
 
@@ -1052,21 +1197,47 @@ _REVIEW_STRUCTURAL = """你是一个结构编辑。审查以下文档的：
 以 JSON 输出：{{"structuralIssues": [{{"type": "missing|redundant|unclear|reorder", "location": "位置", "issue": "问题", "suggestion": "建议"}}], "completenessScore": 8, "summary": "总评"}}
 只输出 JSON。"""
 
-_REVISE_SYSTEM = """{persona}
+_REVISE_PATCH_PROMPT = """{persona}
 
-你之前产出了一份文档，现在收到了审查反馈。请根据反馈修订文档。
+你收到了以下文档的审查反馈。请只修订存在问题的章节，不要重写整篇文档。
 
 原始文档：
 {original}
 
-审查反馈：
-{review_feedback}
+审查反馈（JSON）：
+{issues_json}
 
-要求：
-1. 逐条处理每个审查问题
-2. 保留原文档中没有问题的部分
-3. 只输出修订后的完整文档（Markdown 格式）
-4. 不要输出任何解释，只输出文档内容"""
+输出格式（严格遵循，不输出任何其他内容）：
+每处修订输出一个补丁块，多个补丁依次列出：
+
+<<<FIND>>>
+[从原文中完整摘抄需要替换的段落或句子，必须与原文完全一致]
+<<<REPLACE>>>
+[修订后的内容，保持 Markdown 格式]
+<<<END>>>
+
+注意：
+- FIND 内容必须能在原文中精确匹配
+- 每个补丁只修改一处，不要将多处合并
+- 如果没有需要修改的内容，只输出：NO_CHANGES"""
+
+
+def _apply_patches(content: str, patch_text: str) -> tuple[str, int]:
+    """将 <<<FIND>>>...<<<REPLACE>>>...<<<END>>> 补丁应用到文档，返回 (修订后内容, 应用数量)。"""
+    if not patch_text or "NO_CHANGES" in patch_text:
+        return content, 0
+    import re
+    pattern = r'<<<FIND>>>\n(.*?)<<<REPLACE>>>\n(.*?)<<<END>>>'
+    patches = re.findall(pattern, patch_text, re.DOTALL)
+    result = content
+    applied = 0
+    for find_text, replace_text in patches:
+        find_text = find_text.strip()
+        replace_text = replace_text.strip()
+        if find_text and find_text in result:
+            result = result.replace(find_text, replace_text, 1)
+            applied += 1
+    return result, applied
 
 
 # ── 知识沉淀 Prompt ──────────────────────────────────────────────────────────
@@ -1203,12 +1374,15 @@ async def execute_worker_with_review(
     code_context: str = "",
     interview_history: list[dict] | None = None,
     max_interview_rounds: int = 3,
+    req_id: str = "",
+    step_id: str = "",
+    review_policy: dict | None = None,
 ) -> dict:
     """对话式访谈 → 逐命令执行 → 审查 → 知识沉淀。"""
 
-    async def emit(tag: str, msg: str):
+    async def emit(tag: str, msg: str, extra_metadata: dict | None = None):
         if on_progress:
-            await on_progress(tag, msg)
+            await on_progress(tag, msg, extra_metadata)
 
     persona = _build_persona(agent_name, agent_role, prompt_blocks)
     context_block = assemble_context(project_context, agent_name)
@@ -1236,7 +1410,10 @@ async def execute_worker_with_review(
         try:
             interview_data = json.loads(raw)
         except json.JSONDecodeError:
-            interview_data = _extract_json(raw)
+            try:
+                interview_data = _extract_json(raw)
+            except ValueError:
+                interview_data = {"ready": True}  # JSON 解析失败时跳过访谈直接执行
 
         if not interview_data.get("ready", True):
             question_count = len([h for h in history if h.get("type") == "question"])
@@ -1257,83 +1434,169 @@ async def execute_worker_with_review(
     # ━━ 阶段 1: 逐命令执行 ━━
     artifacts = []
 
-    for cmd_code in cmd_codes:
+    cmd_idx = 0
+    while cmd_idx < len(cmd_codes):
+        cmd_code = cmd_codes[cmd_idx]
         cmd_name = _CMD_NAMES.get(cmd_code, cmd_code)
         await emit(f"exec:{cmd_code}", f"正在执行 {cmd_name}...")
 
-        art = await _execute_single_command(
-            cmd_code=cmd_code,
-            cmd_name=cmd_name,
-            persona=persona,
-            req_title=req_title,
-            req_summary=req_summary,
-            context_block=context_block,
-            prev_outputs=intra_step_outputs,
-            max_tokens=_resolve_max_tokens(cmd_code),
-        )
+        try:
+            art = await _execute_single_command(
+                cmd_code=cmd_code,
+                cmd_name=cmd_name,
+                persona=persona,
+                req_title=req_title,
+                req_summary=req_summary,
+                context_block=context_block,
+                prev_outputs=intra_step_outputs,
+                max_tokens=_resolve_max_tokens(cmd_code),
+            )
+        except Exception as exc:
+            await emit(f"error:{cmd_code}", f"{cmd_name} 执行失败：{exc}，跳过继续")
+            cmd_idx += 1
+            continue
 
         if art and art.get("content"):
             art["_cmd_code"] = cmd_code
             artifacts.append(art)
             art_name = art.get("name", cmd_name)
-            await emit(f"done:{cmd_code}", f"完成 → 产出：{art_name}")
+            await emit(f"done:{cmd_code}", f"完成 → 产出：{art_name}",
+                       {"content_preview": art.get("content", "")})
             intra_step_outputs += f"\n\n[{cmd_name}·{art_name}]\n{art['content']}"
+
+        # ── 命令级暂停：等待用户确认继续 ──
+        # CP/EP 产出 PRD 后还有 Phase 2 审查修订，不在此打断——等审查定稿后再做最终确认
+        # review_policy.stepPause=False 时全部跳过命令间暂停
+        _NO_PAUSE_CMDS = {"CP", "EP"}
+        step_pause_enabled = review_policy.get("stepPause", True) if review_policy else True
+        if step_pause_enabled and step_id and cmd_idx < len(cmd_codes) - 1 and cmd_code not in _NO_PAUSE_CMDS:
+            key = f"{req_id}:{step_id}" if req_id else ""
+            pause_evt = _step_pause_events.get(key)
+            if pause_evt:
+                next_code = cmd_codes[cmd_idx + 1]
+                next_name = _CMD_NAMES.get(next_code, next_code)
+                pause_evt.clear()
+                await emit(
+                    "step_paused",
+                    f"「{cmd_name}」已完成，确认后继续执行「{next_name}」",
+                    {
+                        "cmd_code": cmd_code,
+                        "next_cmd_code": next_code,
+                        "next_cmd_name": next_name,
+                        "waiting_for": "continue",
+                    },
+                )
+                await pause_evt.wait()
+                fb = _step_feedback.pop(key, "")
+                if fb:
+                    intra_step_outputs += f"\n\n[用户反馈] {fb}"
+                    await emit("user_feedback", f"收到用户反馈: {fb}")
+
+                    # 解析是否要跳转到特定命令
+                    skip_idx = _find_skip_cmd_idx(fb, cmd_codes, cmd_idx + 1)
+                    if skip_idx > cmd_idx + 1:
+                        skipped = cmd_codes[cmd_idx + 1 : skip_idx]
+                        skipped_names = "、".join(_CMD_NAMES.get(c, c) for c in skipped)
+                        jump_name = _CMD_NAMES.get(cmd_codes[skip_idx], cmd_codes[skip_idx])
+                        await emit(
+                            "user_feedback",
+                            f"按用户指令跳过「{skipped_names}」，直接执行「{jump_name}」",
+                        )
+                        cmd_idx = skip_idx
+                        continue
+
+        cmd_idx += 1
 
     if not artifacts:
         return {"artifacts": [], "suggestedContextUpdates": []}
 
     # ━━ 阶段 2: 审查 ━━
     REVIEWABLE_TYPES = {"document", "report", "plan", "design"}
-    reviews = [
-        ("adversarial", "对抗性审查", _REVIEW_ADVERSARIAL),
-        ("edge-case", "边界用例审查", _REVIEW_EDGE_CASE),
-        ("structural", "结构完整性审查", _REVIEW_STRUCTURAL),
+
+    # 根据 review_policy 过滤启用的审查类型；不设则用系统默认（对抗+边界，结构默认关）
+    _rp = review_policy or {}
+    _review_defaults = {"adversarial": True, "edgeCase": True, "structural": False}
+    _rid_key = {"adversarial": "adversarial", "edge-case": "edgeCase", "structural": "structural"}
+    active_reviews = [
+        (rid, rname, rtpl)
+        for rid, rname, rtpl in [
+            ("adversarial", "对抗性审查",     _REVIEW_ADVERSARIAL),
+            ("edge-case",   "边界用例审查",   _REVIEW_EDGE_CASE),
+            ("structural",  "结构完整性审查", _REVIEW_STRUCTURAL),
+        ]
+        if _rp.get(_rid_key[rid], _review_defaults[_rid_key[rid]])
     ]
+
+    # EP 是 CP 的修订版，若两者同时存在，CP 产出的 PRD 已被覆盖，跳过 CP 的审查
+    batch_cmd_codes = {art.get("_cmd_code") for art in artifacts}
+    skip_review_cmds: set[str] = set()
+    if "CP" in batch_cmd_codes and "EP" in batch_cmd_codes:
+        skip_review_cmds.add("CP")
 
     for i, art in enumerate(artifacts):
         if art.get("type") not in REVIEWABLE_TYPES:
             continue
+        if art.get("_cmd_code") in skip_review_cmds:
+            continue
 
         cmd = art.get("_cmd_code", "")
-        art_review_rounds = _CMD_REVIEW_POLICY.get(cmd, 2)
+        art_review_rounds = _CMD_REVIEW_POLICY.get(cmd, 1)
         if art_review_rounds == 0:
             continue
 
         current_content = art.get("content", "")
         art_name = art.get("name", "产出物")
 
-        for review_id, review_name, review_template in reviews[:art_review_rounds]:
-            await emit(f"review:{review_id}", f"正在对「{art_name}」进行{review_name}...")
-
-            review_raw = await _chat(
-                messages=[{"role": "user", "content": review_template.format(document=current_content)}],
-                max_tokens=2000,
-                json_mode=True,
-            )
+        for review_id, review_name, review_template in active_reviews[:art_review_rounds]:
             try:
-                review_data = json.loads(review_raw)
-            except json.JSONDecodeError:
-                review_data = _extract_json(review_raw)
+                await emit(f"review:{review_id}", f"正在对「{art_name}」进行{review_name}...")
 
-            await emit("findings", f"[{review_name}] {review_data.get('summary', '审查完成')}")
+                review_raw = await _chat(
+                    messages=[{"role": "user", "content": review_template.format(document=current_content)}],
+                    max_tokens=2000,
+                    json_mode=True,
+                )
+                try:
+                    review_data = json.loads(review_raw)
+                except json.JSONDecodeError:
+                    try:
+                        review_data = _extract_json(review_raw)
+                    except ValueError:
+                        review_data = {"summary": "审查完成（解析失败）"}
 
-            has_issues = (
-                review_data.get("issues")
-                or review_data.get("edgeCases")
-                or review_data.get("structuralIssues")
-            )
-            if not has_issues:
-                await emit("pass", f"「{art_name}」{review_name}通过")
+                await emit("findings", f"[{review_name}] {review_data.get('summary', '审查完成')}")
+
+                has_issues = (
+                    review_data.get("issues")
+                    or review_data.get("edgeCases")
+                    or review_data.get("structuralIssues")
+                )
+                if not has_issues:
+                    await emit("pass", f"「{art_name}」{review_name}通过")
+                    continue
+
+                await emit("revise", f"正在根据{review_name}反馈生成修订补丁...")
+                patch_buffer = ""
+                async for delta in _stream_chat(
+                    messages=[{"role": "user", "content": _REVISE_PATCH_PROMPT.format(
+                        persona=persona, original=current_content, issues_json=review_raw,
+                    )}],
+                    max_tokens=1500,
+                ):
+                    patch_buffer += delta
+                    await emit("revise:stream", delta)
+
+                revised, n_applied = _apply_patches(current_content, patch_buffer)
+                if n_applied > 0:
+                    current_content = revised
+                    await emit("revise:applied", f"已应用 {n_applied} 处补丁修订")
+                elif "NO_CHANGES" in patch_buffer:
+                    await emit("pass", f"「{art_name}」{review_name}无需修订")
+                else:
+                    await emit("revise:warn", f"补丁未能匹配原文，保留原内容")
+            except Exception as exc:
+                await emit(f"error:review", f"{review_name}失败：{exc}，跳过该轮审查")
                 continue
-
-            await emit("revise", f"正在根据{review_name}反馈修订「{art_name}」...")
-            revised = await _chat(
-                messages=[{"role": "user", "content": _REVISE_SYSTEM.format(
-                    persona=persona, original=current_content, review_feedback=review_raw,
-                )}],
-                max_tokens=_resolve_max_tokens(cmd),
-            )
-            current_content = revised
 
         artifacts[i]["content"] = current_content
         artifacts[i]["summary"] = f"[经 {art_review_rounds} 轮审查] " + art.get("summary", "")
@@ -1346,33 +1609,39 @@ async def execute_worker_with_review(
     # ━━ 阶段 3: 知识沉淀（仅限特定角色） ━━
     context_updates: list[dict] = []
     if agent_role in _KNOWLEDGE_ENABLED_ROLES:
-        await emit("knowledge", "正在从产出物中提炼可复用知识...")
-
-        all_content = "\n\n---\n\n".join(
-            f"## {a.get('name', '')}\n{a.get('content', '')}" for a in artifacts
-        )
-        knowledge_raw = await _chat(
-            messages=[{"role": "user", "content": _KNOWLEDGE_EXTRACT.format(artifacts_content=all_content)}],
-            max_tokens=2000,
-            json_mode=True,
-        )
         try:
-            knowledge_data = json.loads(knowledge_raw)
-        except json.JSONDecodeError:
-            knowledge_data = _extract_json(knowledge_raw)
+            await emit("knowledge", "正在从产出物中提炼可复用知识...")
 
-        knowledge_items = knowledge_data.get("items", [])
-        context_updates = _knowledge_to_suggestions(knowledge_items)
+            all_content = "\n\n---\n\n".join(
+                f"## {a.get('name', '')}\n{a.get('content', '')}" for a in artifacts
+            )
+            knowledge_raw = await _chat(
+                messages=[{"role": "user", "content": _KNOWLEDGE_EXTRACT.format(artifacts_content=all_content)}],
+                max_tokens=2000,
+                json_mode=True,
+            )
+            try:
+                knowledge_data = json.loads(knowledge_raw)
+            except json.JSONDecodeError:
+                try:
+                    knowledge_data = _extract_json(knowledge_raw)
+                except ValueError:
+                    knowledge_data = {"items": []}
 
-        if knowledge_items:
-            type_counts: dict[str, int] = {}
-            for item in knowledge_items:
-                t = item.get("type", "unknown")
-                type_counts[t] = type_counts.get(t, 0) + 1
-            summary_parts = [f"{v} 条{k}" for k, v in type_counts.items()]
-            await emit("knowledge:done", f"提取了 {'、'.join(summary_parts)}")
-        else:
-            await emit("knowledge:done", "未发现需要沉淀的新知识")
+            knowledge_items = knowledge_data.get("items", [])
+            context_updates = _knowledge_to_suggestions(knowledge_items)
+
+            if knowledge_items:
+                type_counts: dict[str, int] = {}
+                for item in knowledge_items:
+                    t = item.get("type", "unknown")
+                    type_counts[t] = type_counts.get(t, 0) + 1
+                summary_parts = [f"{v} 条{k}" for k, v in type_counts.items()]
+                await emit("knowledge:done", f"提取了 {'、'.join(summary_parts)}")
+            else:
+                await emit("knowledge:done", "未发现需要沉淀的新知识")
+        except Exception as exc:
+            await emit("error:knowledge", f"知识沉淀失败：{exc}，跳过")
 
     return {
         "artifacts": artifacts,

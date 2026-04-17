@@ -7,15 +7,17 @@ Commander 是一个维持多轮对话的 LLM，通过 function calling 驱动
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import time
 from datetime import datetime
 from typing import Any
 
 from .context import assemble_context
-from .llm import execute_worker_agent, execute_worker_with_review, chat_with_tools
+from .llm import execute_worker_agent, execute_worker_with_review, chat_with_tools, register_step_pause
 from .workspace import WorkspaceManager
 from .storage import (
+    delete_commander_events,
     delete_commander_state,
     delete_pending_suggestion,
     get_artifacts,
@@ -35,6 +37,11 @@ from .storage import (
 
 # ── 并发保护 ──────────────────────────────────────────────────────────────────
 _pipeline_locks: dict[str, asyncio.Lock] = {}
+
+# ── 中止支持 ──────────────────────────────────────────────────────────────────
+_running_tasks: dict[str, asyncio.Task] = {}
+_active_processes: dict[str, list[asyncio.subprocess.Process]] = {}
+current_req_id: contextvars.ContextVar[str] = contextvars.ContextVar("current_req_id", default="")
 
 
 class _ToolCallFunction:
@@ -132,6 +139,7 @@ def _build_commander_system(req: dict, project: dict) -> str:
         f"  [{s['id']}] {s['name']} | Agent: {s['agentName']} "
         f"| 命令: {s.get('commands', 'N/A')} "
         f"| 强制审批: {'是' if s.get('requiresApproval') else '否'}"
+        f"| 状态: {s.get('status', 'queued')}"
         for s in req["pipeline"]
     )
 
@@ -149,7 +157,10 @@ def _build_commander_system(req: dict, project: dict) -> str:
 2. 步骤标注「强制审批=是」时，invoke_agent 完成后必须立即调用 request_approval
 3. 若产出物存在重大质量风险，可调用 request_advisory_approval（须参考 [LESSONS]，勿滥用）
 4. 所有步骤全部完成后调用 complete_pipeline
-5. 遇到无法继续的严重错误调用 block_pipeline"""
+5. 遇到无法继续的严重错误调用 block_pipeline
+6. 状态为 'done' 的步骤已完成，跳过，直接执行下一个 queued 步骤
+7. 严禁在未通过 invoke_agent 真正执行完所有 queued 步骤之前调用 complete_pipeline
+8. 不能根据步骤命令描述推测任务已完成——必须本次实际调用 invoke_agent 并收到返回结果才算完成"""
 
 
 # ── 主入口 ────────────────────────────────────────────────────────────────────
@@ -164,10 +175,109 @@ async def run_commander(
     if lock.locked():
         return  # 已有实例正在运行，跳过
     async with lock:
+        current_req_id.set(req_id)
+        task = asyncio.current_task()
+        if task:
+            _running_tasks[req_id] = task
         try:
             await _commander_loop(req_id, project_id, approval_result)
+        except asyncio.CancelledError:
+            pass  # 被 abort 取消，静默退出
         except Exception as e:
             _mark_current_running_step_blocked(req_id, str(e))
+        finally:
+            _running_tasks.pop(req_id, None)
+            _active_processes.pop(req_id, None)
+
+
+async def abort_pipeline(req_id: str) -> bool:
+    """中止流水线：取消任务 + 杀进程 + 标记状态。"""
+    from .llm import cleanup_step_pause
+
+    task = _running_tasks.pop(req_id, None)
+    # 杀所有关联子进程
+    for proc in _active_processes.pop(req_id, []):
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    # 取消 asyncio Task
+    if task and not task.done():
+        task.cancel()
+    # 清理暂停事件
+    cleanup_step_pause(req_id)
+    # 更新需求状态
+    req = get_requirement(req_id)
+    if req:
+        for step in req["pipeline"]:
+            if step["status"] == "running":
+                step["status"] = "blocked"
+                step["error"] = "用户中止"
+        for story in req.get("stories", []):
+            for step in story["pipeline"]:
+                if step["status"] == "running":
+                    step["status"] = "blocked"
+                    step["error"] = "用户中止"
+        req["status"] = "blocked"
+        save_requirement(req_id, req)
+    save_commander_event(req_id, "pipeline_aborted", "system", "", "流水线已被用户中止", {})
+    return True
+
+
+def restart_pipeline(req_id: str, project_id: str) -> dict | None:
+    """从头重跑：重置所有步骤为 queued，清空历史事件和 Commander 状态。"""
+    req = get_requirement(req_id)
+    if not req:
+        return None
+    for step in req["pipeline"]:
+        step["status"] = "queued"
+        step.pop("error", None)
+        step["artifacts"] = []
+    for story in req.get("stories", []):
+        story["status"] = "queued"
+        for step in story["pipeline"]:
+            step["status"] = "queued"
+            step.pop("error", None)
+            step["artifacts"] = []
+    req["status"] = "running"
+    save_requirement(req_id, req)
+    delete_commander_events(req_id)
+    delete_commander_state(req_id)
+    # 写入新的 greeting 事件
+    step_count = len(req.get("pipeline", []))
+    step_names = "、".join(s["name"] for s in req.get("pipeline", []))
+    save_commander_event(
+        req_id, "commander_greeting", "commander", "Commander",
+        f"需求「{req['title']}」重新开始，流水线 {step_count} 个步骤（{step_names}）。",
+        {"step_count": step_count},
+    )
+    return req
+
+
+def resume_pipeline(req_id: str) -> dict | None:
+    """从断点继续：blocked 步骤重置为 queued，已完成步骤保留。"""
+    req = get_requirement(req_id)
+    if not req:
+        return None
+    for step in req["pipeline"]:
+        if step["status"] == "blocked":
+            step["status"] = "queued"
+            step.pop("error", None)
+    for story in req.get("stories", []):
+        if story["status"] == "blocked":
+            story["status"] = "queued"
+        for step in story["pipeline"]:
+            if step["status"] == "blocked":
+                step["status"] = "queued"
+                step.pop("error", None)
+    req["status"] = "running"
+    save_requirement(req_id, req)
+    save_commander_event(
+        req_id, "pipeline_resumed", "system", "",
+        "流水线从断点恢复执行",
+        {},
+    )
+    return req
 
 
 async def _commander_loop(
@@ -195,15 +305,35 @@ async def _commander_loop(
             "审批已通过，恢复执行流水线...",
         )
     else:
-        # 全新启动
+        # 全新启动 or 中断后 resume（无 saved state）
+        done_steps = [s for s in req["pipeline"] if s.get("status") == "done"]
+        pending_steps = [s for s in req["pipeline"] if s.get("status") not in ("done",)]
+
+        if done_steps and pending_steps:
+            # 中断 resume：已有部分步骤完成，需要从断点继续
+            done_names = "、".join(s["name"] for s in done_steps)
+            pending_names = "、".join(s["name"] for s in pending_steps)
+            user_msg = (
+                f"流水线从中断点恢复执行。\n"
+                f"已完成步骤（跳过）：{done_names}\n"
+                f"待执行步骤：{pending_names}\n"
+                f"请从第一个 queued 步骤开始继续执行，不要重复执行已完成的步骤。"
+            )
+            save_commander_event(
+                req_id, "commander_thinking", "commander", "Commander",
+                f"流水线从中断点恢复，已完成 {len(done_steps)} 步，继续执行剩余 {len(pending_steps)} 步...",
+            )
+        else:
+            user_msg = "请开始执行流水线。"
+            save_commander_event(
+                req_id, "commander_thinking", "commander", "Commander",
+                "正在分析流水线，准备开始执行...",
+            )
+
         messages = [
             {"role": "system", "content": _build_commander_system(req, project)},
-            {"role": "user", "content": "请开始执行流水线。"},
+            {"role": "user", "content": user_msg},
         ]
-        save_commander_event(
-            req_id, "commander_thinking", "commander", "Commander",
-            "正在分析流水线，准备开始执行...",
-        )
 
         # 创建需求分支
         ws = _get_workspace(project_id, project)
@@ -218,7 +348,7 @@ async def _commander_loop(
             except Exception:
                 pass
 
-    max_iterations = len(req["pipeline"]) * 3 + 10  # 安全上限
+    max_iterations = len(req["pipeline"]) * 6 + 20  # 安全上限（每步可能有访谈+重执行+审批）
     iteration = 0
     no_tool_streak = 0
 
@@ -371,6 +501,22 @@ async def _dispatch(
         }, True
 
     elif name == "complete_pipeline":
+        # 守卫：必须所有步骤真正执行完成才允许标记结束
+        req = get_requirement(req_id)
+        not_done = [s for s in req["pipeline"] if s.get("status") != "done"]
+        if not_done:
+            not_done_names = "、".join(s["name"] for s in not_done)
+            save_commander_event(
+                req_id, "commander_thinking", "commander", "Commander",
+                f"检测到步骤「{not_done_names}」尚未完成，继续执行...",
+            )
+            return {
+                "status": "error",
+                "message": (
+                    f"步骤「{not_done_names}」尚未执行完毕，不能调用 complete_pipeline。"
+                    f"请先调用 invoke_agent 完成这些步骤。"
+                ),
+            }, False
         _mark_pipeline_done(req_id)
         save_commander_event(
             req_id, "pipeline_complete", "system", "Commander",
@@ -434,14 +580,27 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
         )
 
     # 进度回调 → Commander 面板实时日志
-    async def on_progress(tag: str, message: str):
+    async def on_progress(tag: str, message: str, extra_metadata: dict | None = None):
+        meta = {"step_id": step_id, "phase": tag}
+        if extra_metadata:
+            meta.update(extra_metadata)
+        # step_paused 使用独立事件类型，前端单独渲染为暂停卡片
+        if tag == "step_paused":
+            event_type = "step_paused"
+            content = message
+        else:
+            event_type = "agent_working"
+            content = f"[{tag}] {message}"
         save_commander_event(
-            req_id, "agent_working", "agent", step["agentName"],
-            f"[{tag}] {message}",
-            {"step_id": step_id, "phase": tag},
+            req_id, event_type, "agent", step["agentName"],
+            content,
+            meta,
         )
 
     agent_role = step.get("agentRole", step.get("role", ""))
+
+    # 注册暂停事件（交互式执行）
+    pause_evt = register_step_pause(req_id, step_id)
 
     result = await execute_worker_with_review(
         agent_name=step["agentName"],
@@ -456,6 +615,9 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
         on_progress=on_progress,
         code_context=ws.build_code_context(agent_role) if ws else "",
         interview_history=interview_hist,
+        req_id=req_id,
+        step_id=step_id,
+        review_policy=step.get("reviewPolicy"),
     )
 
     # ★ 访谈阶段：Worker 需要用户输入，直接返回给 _dispatch 做拦截
@@ -465,13 +627,16 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
     # 持久化产出物（DB + Git 文件）
     artifacts = result.get("artifacts", [])
     for art in artifacts:
+        content = art.get("content", "")
+        if not content or not content.strip():
+            continue  # 跳过空产出物，不写入 DB
         save_artifact(
             req_id=req_id,
             step_id=step_id,
             name=art.get("name", "产出物"),
             type_=art.get("type", "document"),
             summary=art.get("summary", ""),
-            content=art.get("content", ""),
+            content=content,
             fmt="markdown",
         )
         # 写入 Git 仓库
