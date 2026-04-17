@@ -132,9 +132,16 @@ def approve_step(
         raise HTTPException(status_code=400,
                             detail=f"Step status is '{step['status']}', not pending approval")
 
+    # 审批通过 → 将步骤状态还原为 done（已由 Worker 完成，只是等待人工确认）
+    from datetime import datetime as _dt
+    step["status"] = "done"
+    step["updatedAt"] = _dt.now().strftime("%H:%M")
+    save_requirement(req_id, req)
+
     background_tasks.add_task(
         run_commander, req_id, project_id,
-        {"approved": True, "step_id": step_id},
+        {"approved": True, "step_id": step_id,
+         "artifacts": step.get("artifacts", [])},
     )
 
     save_commander_event(
@@ -196,12 +203,19 @@ def dismiss_advisory(
         project["context"] = ctx
         save_project(project_id, project)
 
+    # 建议性审批驳回 → 将步骤状态还原为 done
+    from datetime import datetime as _dt
+    step["status"] = "done"
+    step["updatedAt"] = _dt.now().strftime("%H:%M")
+    save_requirement(req_id, req)
+
     background_tasks.add_task(
         run_commander, req_id, project_id,
         {
             "approved": True,
             "advisory_dismissed": True,
             "step_id": step_id,
+            "artifacts": step.get("artifacts", []),
             "feedback": f"建议性审批被人工驳回，继续执行。{('教训：' + body.lessonTitle) if body.lessonTitle else ''}",
         },
     )

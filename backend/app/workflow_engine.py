@@ -154,7 +154,7 @@ def _build_commander_system(req: dict, project: dict) -> str:
 
 ## 执行规则
 1. 严格按流水线顺序依次调用 invoke_agent
-2. 步骤标注「强制审批=是」时，invoke_agent 完成后必须立即调用 request_approval
+2. 步骤标注「强制审批=是」时，系统会在 invoke_agent 完成后自动暂停等待人工审批；审批通过后你将收到含 "approved": true、"status": "done" 的工具响应，表示该步骤已批准并完成，直接继续执行下一步，无需再调用 request_approval
 3. 若产出物存在重大质量风险，可调用 request_advisory_approval（须参考 [LESSONS]，勿滥用）
 4. 所有步骤全部完成后调用 complete_pipeline
 5. 遇到无法继续的严重错误调用 block_pipeline
@@ -295,10 +295,27 @@ async def _commander_loop(
     if saved:
         # 从暂停点恢复：加载历史消息，追加审批结果作为 tool response
         messages: list[dict] = json.loads(saved["messages"])
+        # 构建完整的 invoke_agent 工具返回值（包含产出物 + 审批状态），
+        # 让 Commander 明确知道：步骤已完成 + 已批准，继续执行下一步
+        step_id_approved = (approval_result or {}).get("step_id")
+        if step_id_approved:
+            req_fresh = get_requirement(req_id)
+            approved_step = next(
+                (s for s in req_fresh["pipeline"] if s["id"] == step_id_approved), None
+            )
+            tool_content = {
+                "step_id": step_id_approved,
+                "status": "done",
+                "artifacts": (approved_step.get("artifacts") if approved_step else None)
+                             or (approval_result or {}).get("artifacts", []),
+                "approved": True,
+            }
+        else:
+            tool_content = approval_result or {"approved": True}
         messages.append({
             "role": "tool",
             "tool_call_id": saved["pendingToolCallId"],
-            "content": json.dumps(approval_result or {"approved": True}, ensure_ascii=False),
+            "content": json.dumps(tool_content, ensure_ascii=False),
         })
         save_commander_event(
             req_id, "commander_thinking", "commander", "Commander",
