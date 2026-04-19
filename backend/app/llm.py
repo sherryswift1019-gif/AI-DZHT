@@ -957,7 +957,7 @@ async def get_artifact_content(req: ArtifactContentRequest) -> ArtifactContentRe
 # ── Worker Agent（真实执行，携带 assemble_context 注入）───────────────────────
 
 _HIGH_TOKEN_CMDS = {"CP", "EP", "CA", "CU"}
-_MEDIUM_TOKEN_CMDS = {"BP", "MR", "DR", "TR", "CB", "VP", "QA"}
+_MEDIUM_TOKEN_CMDS = {"BP", "MR", "DR", "TR", "CB", "VP", "QA", "TS", "TRV", "QG"}
 
 
 def _resolve_max_tokens(commands: str) -> int:
@@ -978,34 +978,22 @@ _WORKER_SYSTEM = """{persona}
 前序产出物摘要：
 {prev_summaries}
 
-请以合法 JSON 格式输出，包含两个字段：
-{{
-  "artifacts": [
-    {{
-      "name": "产出物名称",
-      "type": "document|code|design|report|plan|test",
-      "summary": "1-2句摘要",
-      "content": "完整 Markdown 或代码内容"
-    }}
-  ],
-  "suggestedContextUpdates": [
-    {{
-      "type": "rule",
-      "scope": "all|dev|qa|pm|design|architect",
-      "text": "规范内容"
-    }},
-    {{
-      "type": "lesson",
-      "scope": "dev",
-      "title": "教训标题",
-      "background": "背景",
-      "correctApproach": "正确做法"
-    }}
-  ]
-}}
+按以下格式为每个命令输出一个产出物块，多个产出物依次列出：
 
-artifacts 至少 1 个，与执行命令对应。suggestedContextUpdates 若无建议则为空数组。
-只输出 JSON，不要有任何其他文字。"""
+---START_ARTIFACT---
+name: 产出物名称
+type: document（可选：document|report|plan|design|code|test）
+summary: 1-2句摘要
+---START_CONTENT---
+完整内容（Markdown 或代码，直接输出专业内容）
+---END_ARTIFACT---
+
+所有产出物输出完毕后，如有可复用的上下文建议，附加：
+---CONTEXT_UPDATES---
+[{"type": "rule", "scope": "all|dev|qa|pm|design|architect", "text": "规范内容"}]
+---END_CONTEXT_UPDATES---
+
+无建议则省略该段。不要有任何其他文字。"""
 
 
 async def execute_worker_agent(
@@ -1039,17 +1027,31 @@ async def execute_worker_agent(
             {"role": "user", "content": user_msg},
         ],
         max_tokens=_resolve_max_tokens(commands),
-        json_mode=True,
     )
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = _extract_json(raw)
+    # 解析多产出物分隔符格式
+    artifacts = []
+    parts = raw.split("---START_ARTIFACT---")
+    for part in parts[1:]:
+        art = _parse_single_artifact("---START_ARTIFACT---" + part, step_name)
+        if art.get("content"):
+            artifacts.append(art)
+
+    # 解析可选的上下文更新
+    context_updates: list[dict] = []
+    ctx_start = raw.find("---CONTEXT_UPDATES---")
+    if ctx_start != -1:
+        ctx_rest = raw[ctx_start + len("---CONTEXT_UPDATES---"):]
+        ctx_end = ctx_rest.find("---END_CONTEXT_UPDATES---")
+        ctx_json = ctx_rest[:ctx_end].strip() if ctx_end != -1 else ctx_rest.strip()
+        try:
+            context_updates = json.loads(ctx_json)
+        except Exception:
+            pass
 
     return {
-        "artifacts": data.get("artifacts", []),
-        "suggestedContextUpdates": data.get("suggestedContextUpdates", []),
+        "artifacts": artifacts,
+        "suggestedContextUpdates": context_updates,
     }
 
 
@@ -1065,6 +1067,15 @@ _CMD_NAMES: dict[str, str] = {
     "CE": "创建 Epic", "IR": "就绪检查", "CC": "方向修正",
     "VS": "验证 Story", "SS": "Sprint 状态", "ER": "复盘",
     "WD": "编写文档", "MG": "Mermaid 图表", "VD": "验证文档", "EC": "解释概念",
+    # Sally UX 命令
+    "IA": "信息架构", "RE": "UX 审查", "HG": "HTML 预览生成",
+    "HD": "开发交付规格", "PR": "UX 规划评审", "DES": "设计系统",
+    # Quinn QA 命令
+    "TS": "测试策略", "TRV": "可测试性评审", "SA": "验收标准强化",
+    "QG": "质量门禁", "TD": "测试数据", "BE": "浏览器测试",
+    "IT": "增量选测", "TH": "测试历史", "CT": "成本追踪",
+    "LJ": "质量评审", "GTV": "缺陷验证", "RS": "回归策略",
+    "CI": "CI/CD", "FD": "Flake检测", "OB": "仪表盘", "XA": "跨Agent协作",
 }
 
 
@@ -1089,9 +1100,19 @@ _CMD_REVIEW_POLICY: dict[str, int] = {
     "MR": 1, "DR": 1, "CB": 1,     # 研究/报告类：一轮结构审查
     "BP": 0, "TR": 0,              # 发散/探索类：跳过审查
     "VP": 0,                        # 验证命令本身就是审查，跳过
+    # Sally UX 命令
+    "CU": 1, "IA": 1, "DES": 1, "HD": 1,  # 交互命令：一轮结构审查
+    "RE": 0, "HG": 0, "PR": 0,             # 自动化命令：跳过审查
+    # Quinn QA 命令
+    "TS": 1, "TRV": 1,                     # 策略类：一轮专属审查（走 _CMD_REVIEW_OVERRIDE）
+    "QA": 1, "BE": 1, "TD": 1,             # 代码类：一轮专属审查（走 _CMD_REVIEW_OVERRIDE）
+    "SA": 1,                                # 验收标准：一轮边界用例审查
+    "QG": 0, "IT": 0, "TH": 0, "CT": 0,   # 执行/分析类：跳过审查
+    "LJ": 0, "GTV": 0, "RS": 0, "FD": 0, "OB": 0,
+    "CI": 0, "XA": 0,
 }
 
-_KNOWLEDGE_ENABLED_ROLES = {"reqLead", "analyst", "pm"}
+_KNOWLEDGE_ENABLED_ROLES = {"reqLead", "analyst", "pm", "qa"}
 
 _SINGLE_CMD_SYSTEM = """{persona}
 
@@ -1102,16 +1123,44 @@ _SINGLE_CMD_SYSTEM = """{persona}
 前序产出物（可参考）：
 {prev_outputs}
 
-请以合法 JSON 格式输出，只包含 1 个产出物：
-{{
-  "artifact": {{
-    "name": "产出物名称",
-    "type": "document|report|plan|design|code|test",
-    "summary": "1-2句摘要",
-    "content": "完整 Markdown 内容"
-  }}
-}}
-只输出 JSON，不要有任何其他文字。"""
+严格按以下格式输出，不要有任何其他文字：
+---START_ARTIFACT---
+name: 产出物名称
+type: document（可选：document|report|plan|design|code|test）
+summary: 1-2句摘要
+---START_CONTENT---
+完整内容（Markdown 或代码，直接输出专业内容，不要加任何包装或说明）
+---END_ARTIFACT---"""
+
+
+def _parse_single_artifact(raw: str, fallback_name: str) -> dict:
+    """解析 ---START_ARTIFACT---...---END_ARTIFACT--- 格式，返回 artifact dict。
+    找不到分隔符时将原始输出整体作为 content（兜底）。"""
+    start = raw.find("---START_ARTIFACT---")
+    if start == -1:
+        return {"name": fallback_name, "type": "document", "summary": "", "content": raw.strip()}
+
+    block = raw[start + len("---START_ARTIFACT---"):]
+    content_sep = block.find("---START_CONTENT---")
+    if content_sep == -1:
+        return {"name": fallback_name, "type": "document", "summary": "", "content": block.strip()}
+
+    meta_text = block[:content_sep].strip()
+    rest = block[content_sep + len("---START_CONTENT---"):]
+    end = rest.find("---END_ARTIFACT---")
+    content = rest[:end].strip() if end != -1 else rest.strip()
+
+    name, type_, summary = fallback_name, "document", ""
+    for line in meta_text.splitlines():
+        if line.startswith("name:"):
+            name = line[5:].strip() or name
+        elif line.startswith("type:"):
+            # 去掉可能的括号注释，取第一个词
+            type_ = line[5:].strip().split("（")[0].split("(")[0].strip() or type_
+        elif line.startswith("summary:"):
+            summary = line[8:].strip()
+
+    return {"name": name, "type": type_, "summary": summary, "content": content}
 
 
 async def _execute_single_command(
@@ -1139,22 +1188,268 @@ async def _execute_single_command(
             {"role": "user", "content": f"需求描述：{req_summary or '（无）'}"},
         ],
         max_tokens=max_tokens,
-        json_mode=True,
     )
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        try:
-            data = _extract_json(raw)
-        except ValueError:
-            # 最后 fallback：将原始文本作为产出物内容
-            return {
-                "name": cmd_name,
-                "type": "document",
-                "summary": f"{cmd_name} 产出（JSON 解析失败，已保留原始内容）",
-                "content": raw,
-            }
-    return data.get("artifact", {})
+    return _parse_single_artifact(raw, cmd_name)
+
+
+# ── 分阶段交互执行（Sally UX 命令）────────────────────────────────────────────
+
+_PHASED_COMMANDS: dict[str, list[dict]] = {
+    "CU": [
+        {
+            "name": "发现与洞察",
+            "focus": (
+                "深入了解产品类型、目标用户特征、核心使用场景和业务目标。"
+                "识别关键设计挑战和机会点。"
+                "产出：项目背景摘要、用户画像（1-3个）、关键设计挑战列表。"
+            ),
+        },
+        {
+            "name": "设计系统与美学方向",
+            "focus": (
+                "基于发现阶段成果，确定设计系统选型（自定义/主流系统/可主题化系统），"
+                "从10种美学方向选一：Minimalism / Editorial / Organic / Luxury / Playful / "
+                "Art Deco / Industrial / Retro-Future / Maximalism / Brutalist。"
+                "HIGH RISK 方向（Retro-Future/Maximalism/Brutalist）需说明执行要点。"
+                "确定字体配对（禁用黑名单：Poppins 正文、Montserrat+Open Sans 组合、Nunito 专业场景）。"
+                "产出：设计系统决策 + 美学方向 + 字体方案 + 基础色彩意向。"
+            ),
+        },
+        {
+            "name": "核心体验与视觉基础",
+            "focus": (
+                "定义3-5条核心用户旅程的交互流程，确定主要页面布局原则和信息层级规则。"
+                "建立色彩 token 体系（主色/功能色/中性色，含 CSS 变量命名规范）。"
+                "定义组件策略：哪些用设计系统现成组件，哪些需要定制。"
+                "产出：用户旅程流程图（文字描述）+ 色彩 token 定义 + 组件策略表。"
+            ),
+        },
+        {
+            "name": "完整 UX 规格生成",
+            "focus": (
+                "综合前三阶段所有决策，生成完整的 ux-design-spec.md。"
+                "强制六部分结构：Part 1 设计基础（设计系统+美学+字体+色彩token）→ "
+                "Part 2 信息架构（主导航+页面层级）→ "
+                "Part 3 组件与模式（核心组件规范+Microcopy规范：错误文案/空状态/确认措辞/加载文案）→ "
+                "Part 4 审查记录（留空，待 RE 命令填充）→ "
+                "Part 5 评审记录（留空，待 PR 命令填充）→ "
+                "Part 6 决策日志（记录本次会话的关键设计决策）。"
+                "组件命名用 kebab-case，颜色全部用 CSS 变量不写死 hex 值。"
+            ),
+        },
+    ],
+    "IA": [
+        {
+            "name": "内容清单与分组",
+            "focus": (
+                "枚举产品所有内容类型、功能模块和用户任务，按用户心智模型（而非内部组织结构）分组，"
+                "标记每组的优先级（核心/重要/次要）。"
+                "产出：内容清单表格 + 分组建议 + 优先级标注。"
+            ),
+        },
+        {
+            "name": "导航结构与命名",
+            "focus": (
+                "基于分组结果设计导航层级（最多3层），确定每个节点的命名"
+                "（简洁、用户语言、避免内部术语），生成站点地图（Mermaid flowchart）和导航流程描述。"
+                "产出：完整 ux-ia.md，含站点地图 Mermaid 图。"
+            ),
+        },
+    ],
+    "DES": [
+        {
+            "name": "美学方向与基础决策",
+            "focus": (
+                "从10种美学方向选定一种并说明理由：Minimalism / Editorial / Organic / Luxury / "
+                "Playful / Art Deco / Industrial / Retro-Future / Maximalism / Brutalist。"
+                "SAFE 方向（Minimalism/Editorial/Organic）可直接选定；"
+                "HIGH RISK 方向需列出3条关键执行原则。"
+                "确定字体配对（标题字体 + 正文字体），说明选择逻辑，标注为何避开黑名单字体。"
+                "确定基础色彩意向（主色调、功能色方向）。"
+                "产出：方向决策摘要（1页内）。"
+            ),
+        },
+        {
+            "name": "完整 Token 体系生成",
+            "focus": (
+                "生成完整 DESIGN.md，包含："
+                "1) 色彩 token（:root 亮色主题 + [data-theme='dark'] 暗色主题，全部 CSS 自定义属性）；"
+                "2) 字体 token（字体族、字重、行高、字号比例）；"
+                "3) 间距 token（基于 4px/8px 网格）；"
+                "4) 圆角/阴影/边框规则。"
+                "所有颜色使用 CSS 变量，禁止写死 hex 值。"
+            ),
+        },
+    ],
+    "QA": [
+        {
+            "name": "测试分析与范围规划",
+            "focus": (
+                "分析前序产出物（PRD、架构、测试策略），识别测试范围和优先级。"
+                "输出测试计划：模块列表、每个模块的测试类型（单元/集成/E2E）、"
+                "预估用例数量、重点关注区域。"
+                "产出：测试范围计划（表格形式，含模块/类型/优先级/预估数量）。"
+            ),
+        },
+        {
+            "name": "测试用例生成",
+            "focus": (
+                "基于测试范围计划，为每个模块生成具体的测试代码。"
+                "测试命名清晰（test_模块_场景_预期），每个测试包含 Arrange/Act/Assert。"
+                "覆盖 Happy path + 异常路径 + 边界值。使用项目现有的测试框架和惯例。"
+                "产出：按模块组织的完整测试代码文件。"
+            ),
+        },
+        {
+            "name": "测试执行与报告",
+            "focus": (
+                "综合前两阶段成果，输出完整的测试产出物。"
+                "包含：测试文件完整代码 + 测试覆盖率说明 + 执行建议 + 质量评估摘要。"
+                "如有前序 TH 历史数据，附带与历史的对比分析。"
+                "产出：完整测试代码 + 统一质量报告。"
+            ),
+        },
+    ],
+    "HD": [
+        {
+            "name": "精度确认与组件范围",
+            "focus": (
+                "确认交付精度：A=3态（default+error+loading）/ B=6态（+hover+focus+disabled）/ "
+                "C=8态（+active/pressed+empty）。"
+                "从 UX 规格中识别核心组件（使用频率最高的3-5个），这些做完整精度；其余做核心3态。"
+                "产出：精度决策说明 + 组件优先级表（组件名/类型/精度级别/备注）。"
+            ),
+        },
+        {
+            "name": "完整规格文档生成",
+            "focus": (
+                "为每个核心组件生成完整开发规格：状态表（按确认精度列出所有态，含视觉描述+CSS变量引用）、"
+                "交互标注（触发条件/动画时长ms/缓动函数/视觉反馈/边界用例）、"
+                "7条 UX 验收标准（可测试的具体描述）。"
+                "组件命名用 kebab-case，颜色只能引用 CSS 变量，不写死值。"
+                "产出：ux-handoff-{功能}.md。"
+            ),
+        },
+    ],
+}
+
+_PHASE_SYSTEM = """{persona}
+
+你正在执行需求「{req_title}」中命令「{cmd_code} — {cmd_name}」的第 {phase_num}/{total_phases} 阶段：**{phase_name}**
+
+本阶段聚焦：
+{phase_focus}
+
+{context_block}
+
+前序产出物（可参考）：
+{prev_outputs}
+{prev_phases_block}
+{user_feedback_block}
+{output_instruction}"""
+
+_PHASE_INTERMEDIATE_INSTRUCTION = """请输出本阶段的关键决策和内容摘要（Markdown 格式，清晰有层级，300-600字），\
+作为下一阶段的输入上下文。不需要完整产出物格式，专注于决策本身。"""
+
+_PHASE_FINAL_INSTRUCTION = """这是最终阶段。请综合所有前序阶段成果，输出完整产出物。
+严格按以下格式输出，不要有任何其他文字：
+---START_ARTIFACT---
+name: 产出物名称
+type: document（可选：document|report|plan|design|code|test）
+summary: 1-2句摘要
+---START_CONTENT---
+完整内容（Markdown 或代码，直接输出专业内容，不要加任何包装或说明）
+---END_ARTIFACT---"""
+
+
+async def _execute_phased_command(
+    cmd_code: str,
+    cmd_name: str,
+    persona: str,
+    req_title: str,
+    req_summary: str,
+    context_block: str,
+    prev_outputs: str,
+    max_tokens: int,
+    emit,
+    req_id: str,
+    step_id: str,
+) -> dict:
+    """分阶段执行：每个阶段产出初稿后暂停等用户确认，最终阶段返回完整 artifact。"""
+    phases = _PHASED_COMMANDS[cmd_code]
+    total = len(phases)
+    key = f"{req_id}:{step_id}"
+    accumulated = prev_outputs  # 累积上下文，逐阶段追加
+
+    for i, phase in enumerate(phases):
+        phase_num = i + 1
+        phase_name = phase["name"]
+        is_last = (i == total - 1)
+
+        await emit(f"exec:{cmd_code}", f"[{cmd_name}] 阶段 {phase_num}/{total}：{phase_name}...")
+
+        # 前序阶段成果块（仅当有阶段输出时追加）
+        prev_phases_block = ""
+        if accumulated != prev_outputs:
+            extra = accumulated[len(prev_outputs):]
+            prev_phases_block = f"\n\n前序阶段成果：\n{extra.strip()}"
+
+        raw = await _chat(
+            messages=[
+                {"role": "user", "content": _PHASE_SYSTEM.format(
+                    persona=persona,
+                    req_title=req_title,
+                    cmd_code=cmd_code,
+                    cmd_name=cmd_name,
+                    phase_num=phase_num,
+                    total_phases=total,
+                    phase_name=phase_name,
+                    phase_focus=phase["focus"],
+                    context_block=context_block,
+                    prev_outputs=accumulated or "（无）",
+                    prev_phases_block=prev_phases_block,
+                    user_feedback_block="",
+                    output_instruction=_PHASE_FINAL_INSTRUCTION if is_last else _PHASE_INTERMEDIATE_INSTRUCTION,
+                )}
+            ],
+            max_tokens=max_tokens if is_last else 1200,
+        )
+
+        if is_last:
+            artifact = _parse_single_artifact(raw, cmd_name)
+            return artifact
+
+        # 非最终阶段：追加阶段输出到上下文，然后暂停等待用户确认
+        accumulated += f"\n\n[阶段 {phase_num} · {phase_name}]\n{raw.strip()}"
+        next_phase_name = phases[i + 1]["name"]
+
+        pause_evt = _step_pause_events.get(key)
+        if pause_evt:
+            pause_evt.clear()
+            await emit(
+                "step_paused",
+                f"[{cmd_name}] 阶段 {phase_num}/{total}「{phase_name}」完成，确认后继续第 {phase_num + 1} 阶段：{next_phase_name}",
+                {
+                    "cmd_code": cmd_code,
+                    "phase": phase_num,
+                    "total_phases": total,
+                    "phase_name": phase_name,
+                    "next_phase_name": next_phase_name,
+                    "waiting_for": "continue",
+                    "phase_output_preview": raw.strip()[:600],
+                },
+            )
+            await pause_evt.wait()
+            fb = _step_feedback.pop(key, "")
+            if fb:
+                accumulated += f"\n\n[用户反馈] {fb}"
+                await emit("user_feedback", f"收到反馈：{fb}")
+        else:
+            # 未注册暂停事件（如直接调用测试）：跳过暂停直接继续
+            await emit(f"done:{cmd_code}:phase{phase_num}", f"阶段 {phase_num} 完成，继续下一阶段")
+
+    # 所有阶段均无最终 artifact（理论上不会走到这里）
+    return {"name": cmd_name, "type": "document", "summary": "", "content": accumulated}
 
 
 # ── 审查 Prompts ─────────────────────────────────────────────────────────────
@@ -1197,47 +1492,125 @@ _REVIEW_STRUCTURAL = """你是一个结构编辑。审查以下文档的：
 以 JSON 输出：{{"structuralIssues": [{{"type": "missing|redundant|unclear|reorder", "location": "位置", "issue": "问题", "suggestion": "建议"}}], "completenessScore": 8, "summary": "总评"}}
 只输出 JSON。"""
 
-_REVISE_PATCH_PROMPT = """{persona}
+# ── Quinn 专属审查 Prompts ────────────────────────────────────────────────────
 
-你收到了以下文档的审查反馈。请只修订存在问题的章节，不要重写整篇文档。
+_REVIEW_TEST_CODE = """你是一个资深测试代码审查员。严格检查以下测试代码：
+
+{validation_block}
+
+1. 断言有效性 — 是否验证业务逻辑而非实现细节
+   （如只断言 status_code 而忽略响应体 = major issue）
+2. Flaky 模式检测 — hardcoded sleep / 时间依赖 / 测试顺序依赖 / 外部服务直连
+3. 数据隔离 — 是否依赖全局状态 / 是否清理测试数据 / 是否会污染其他测试
+4. 覆盖完整性 — Happy path + 至少 1 个异常路径 + 边界值
+5. Mock 合理性 — 过度 mock 导致测试失去意义 / mock 行为与真实实现不一致
+6. 可维护性 — 命名是否清晰 / 是否有魔法数字 / fixture 是否复用
+7. 幻觉检测 — 是否调用了不存在的函数、API 或模块
+
+测试代码：
+{document}
+
+以 JSON 输出：{{"issues": [{{"severity": "critical|major|minor", "location": "行号或函数名", "issue": "问题", "suggestion": "修复建议"}}], "summary": "总评"}}
+只输出 JSON。"""
+
+_REVIEW_TEST_STRATEGY = """你是一个测试策略审查员。审查以下测试策略文档：
+
+1. 风险遗漏 — 是否遗漏了高变更频率模块（对照实际代码结构）
+2. 金字塔比例 — E2E 占比是否超过 20%（超过则标记 warning）
+3. 需求追溯完整性 — 是否有 PRD 需求未映射到任何测试
+4. 约束感知 — 是否考虑了已知技术约束
+5. 可操作性 — 每条建议是否具体到可直接执行（非"需要加强测试"这类空话）
+6. 成本合理性 — 测试数量/复杂度是否与项目规模匹配
+
+文档内容：
+{document}
+
+以 JSON 输出：{{"issues": [{{"severity": "critical|major|minor", "location": "位置", "issue": "问题", "suggestion": "建议"}}], "summary": "总评"}}
+只输出 JSON。"""
+
+# 命令级审查覆盖：命令 → [(review_id, review_name, review_template), ...]
+_CMD_REVIEW_OVERRIDE: dict[str, list[tuple]] = {
+    "QA":  [("test-code",     "测试代码审查",   _REVIEW_TEST_CODE)],
+    "BE":  [("test-code",     "测试代码审查",   _REVIEW_TEST_CODE)],
+    "TD":  [("test-code",     "测试代码审查",   _REVIEW_TEST_CODE)],
+    "TS":  [("test-strategy", "测试策略审查",   _REVIEW_TEST_STRATEGY)],
+    "TRV": [("test-strategy", "测试策略审查",   _REVIEW_TEST_STRATEGY)],
+}
+
+
+# ── 测试代码验证层 ───────────────────────────────────────────────────────────
+
+def _looks_like_python(content: str) -> bool:
+    markers = ("import ", "from ", "def test_", "class Test", "@pytest", "assert ")
+    return any(m in content for m in markers)
+
+
+def _looks_like_typescript(content: str) -> bool:
+    markers = ("import {", "describe(", "it(", "test(", "expect(", "from '", 'from "')
+    return any(m in content for m in markers)
+
+
+async def _validate_test_code(art: dict, emit) -> dict:
+    """对 type='test' 的产出物做代码级验证，返回验证结果。"""
+    content = art.get("content", "")
+    issues: list[dict] = []
+
+    if _looks_like_python(content):
+        # AST 语法检查（不执行，只解析）
+        try:
+            import ast
+            ast.parse(content)
+        except SyntaxError as e:
+            issues.append({
+                "severity": "critical",
+                "issue": f"Python 语法错误 (行 {e.lineno}): {e.msg}",
+            })
+
+        # 检查 flaky 模式
+        for line_no, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("time.sleep(") or stripped.startswith("asyncio.sleep("):
+                issues.append({
+                    "severity": "major",
+                    "issue": f"Flaky 模式: 行 {line_no} 使用 hardcoded sleep，易导致测试不稳定",
+                })
+
+    elif _looks_like_typescript(content):
+        # 基本括号匹配检测
+        opens = content.count("{") + content.count("(") + content.count("[")
+        closes = content.count("}") + content.count(")") + content.count("]")
+        if abs(opens - closes) > 2:
+            issues.append({
+                "severity": "critical",
+                "issue": f"括号不匹配: 开括号 {opens} vs 闭括号 {closes}，可能存在语法错误",
+            })
+
+        # 检查 flaky 模式
+        for line_no, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if "setTimeout(" in stripped or "new Promise(r => setTimeout" in stripped:
+                issues.append({
+                    "severity": "major",
+                    "issue": f"Flaky 模式: 行 {line_no} 使用 setTimeout，易导致测试不稳定",
+                })
+
+    if issues:
+        await emit("validation", f"代码验证发现 {len(issues)} 个问题")
+
+    return {"valid": len(issues) == 0, "issues": issues}
+
+
+_REVISE_PROMPT = """{persona}
+
+根据以下审查反馈，对文档进行修订。直接输出**完整的修订后文档**，不要添加任何前缀说明或包装格式。
 
 原始文档：
 {original}
 
-审查反馈（JSON）：
+审查反馈：
 {issues_json}
 
-输出格式（严格遵循，不输出任何其他内容）：
-每处修订输出一个补丁块，多个补丁依次列出：
-
-<<<FIND>>>
-[从原文中完整摘抄需要替换的段落或句子，必须与原文完全一致]
-<<<REPLACE>>>
-[修订后的内容，保持 Markdown 格式]
-<<<END>>>
-
-注意：
-- FIND 内容必须能在原文中精确匹配
-- 每个补丁只修改一处，不要将多处合并
-- 如果没有需要修改的内容，只输出：NO_CHANGES"""
-
-
-def _apply_patches(content: str, patch_text: str) -> tuple[str, int]:
-    """将 <<<FIND>>>...<<<REPLACE>>>...<<<END>>> 补丁应用到文档，返回 (修订后内容, 应用数量)。"""
-    if not patch_text or "NO_CHANGES" in patch_text:
-        return content, 0
-    import re
-    pattern = r'<<<FIND>>>\n(.*?)<<<REPLACE>>>\n(.*?)<<<END>>>'
-    patches = re.findall(pattern, patch_text, re.DOTALL)
-    result = content
-    applied = 0
-    for find_text, replace_text in patches:
-        find_text = find_text.strip()
-        replace_text = replace_text.strip()
-        if find_text and find_text in result:
-            result = result.replace(find_text, replace_text, 1)
-            applied += 1
-    return result, applied
+如无需修改，只输出：NO_CHANGES"""
 
 
 # ── 知识沉淀 Prompt ──────────────────────────────────────────────────────────
@@ -1441,18 +1814,40 @@ async def execute_worker_with_review(
         await emit(f"exec:{cmd_code}", f"正在执行 {cmd_name}...")
 
         try:
-            art = await _execute_single_command(
-                cmd_code=cmd_code,
-                cmd_name=cmd_name,
-                persona=persona,
-                req_title=req_title,
-                req_summary=req_summary,
-                context_block=context_block,
-                prev_outputs=intra_step_outputs,
-                max_tokens=_resolve_max_tokens(cmd_code),
-            )
+            if cmd_code in _PHASED_COMMANDS and step_id and req_id:
+                art = await _execute_phased_command(
+                    cmd_code=cmd_code,
+                    cmd_name=cmd_name,
+                    persona=persona,
+                    req_title=req_title,
+                    req_summary=req_summary,
+                    context_block=context_block,
+                    prev_outputs=intra_step_outputs,
+                    max_tokens=_resolve_max_tokens(cmd_code),
+                    emit=emit,
+                    req_id=req_id,
+                    step_id=step_id,
+                )
+            else:
+                art = await _execute_single_command(
+                    cmd_code=cmd_code,
+                    cmd_name=cmd_name,
+                    persona=persona,
+                    req_title=req_title,
+                    req_summary=req_summary,
+                    context_block=context_block,
+                    prev_outputs=intra_step_outputs,
+                    max_tokens=_resolve_max_tokens(cmd_code),
+                )
         except Exception as exc:
-            await emit(f"error:{cmd_code}", f"{cmd_name} 执行失败：{exc}，跳过继续")
+            await emit(f"error:{cmd_code}", f"{cmd_name} 执行失败：{exc}")
+            artifacts.append({
+                "name": f"{cmd_name}-执行失败",
+                "type": "error",
+                "summary": f"命令 {cmd_code} 执行失败: {str(exc)[:200]}",
+                "content": f"# {cmd_name} 执行失败\n\n错误信息: {exc}\n\n请检查 LLM 配置或重试此步骤。",
+                "_cmd_code": cmd_code,
+            })
             cmd_idx += 1
             continue
 
@@ -1511,7 +1906,7 @@ async def execute_worker_with_review(
         return {"artifacts": [], "suggestedContextUpdates": []}
 
     # ━━ 阶段 2: 审查 ━━
-    REVIEWABLE_TYPES = {"document", "report", "plan", "design"}
+    REVIEWABLE_TYPES = {"document", "report", "plan", "design", "test"}
 
     # 根据 review_policy 过滤启用的审查类型；不设则用系统默认（对抗+边界，结构默认关）
     _rp = review_policy or {}
@@ -1544,15 +1939,40 @@ async def execute_worker_with_review(
         if art_review_rounds == 0:
             continue
 
+        # 测试代码验证层（仅 type="test"）
+        validation_block = ""
+        if art.get("type") == "test":
+            validation = await _validate_test_code(art, emit)
+            if validation["issues"]:
+                art["_validation_issues"] = validation["issues"]
+                validation_block = "代码验证发现以下问题，请优先处理：\n" + "\n".join(
+                    f"- [{vi['severity']}] {vi['issue']}" for vi in validation["issues"]
+                )
+
         current_content = art.get("content", "")
         art_name = art.get("name", "产出物")
 
-        for review_id, review_name, review_template in active_reviews[:art_review_rounds]:
+        # 选择审查模板：命令级覆盖 > 通用审查
+        if cmd in _CMD_REVIEW_OVERRIDE:
+            reviews_to_use = _CMD_REVIEW_OVERRIDE[cmd][:art_review_rounds]
+        else:
+            reviews_to_use = active_reviews[:art_review_rounds]
+
+        for review_id, review_name, review_template in reviews_to_use:
             try:
                 await emit(f"review:{review_id}", f"正在对「{art_name}」进行{review_name}...")
 
+                # 格式化模板：Quinn 专属模板支持 validation_block，通用模板只用 document
+                try:
+                    formatted = review_template.format(
+                        document=current_content,
+                        validation_block=validation_block,
+                    )
+                except KeyError:
+                    formatted = review_template.format(document=current_content)
+
                 review_raw = await _chat(
-                    messages=[{"role": "user", "content": review_template.format(document=current_content)}],
+                    messages=[{"role": "user", "content": formatted}],
                     max_tokens=2000,
                     json_mode=True,
                 )
@@ -1562,7 +1982,13 @@ async def execute_worker_with_review(
                     try:
                         review_data = _extract_json(review_raw)
                     except ValueError:
-                        review_data = {"summary": "审查完成（解析失败）"}
+                        review_data = {
+                            "issues": [{"severity": "major", "location": "全局",
+                                        "issue": "审查 JSON 解析失败，审查结果不可信",
+                                        "suggestion": "建议人工审查此产出物"}],
+                            "summary": "审查 JSON 输出异常，已标记为待人工确认",
+                        }
+                        await emit("review:parse_error", "审查 JSON 解析失败，标记产出物待人工确认")
 
                 await emit("findings", f"[{review_name}] {review_data.get('summary', '审查完成')}")
 
@@ -1575,36 +2001,62 @@ async def execute_worker_with_review(
                     await emit("pass", f"「{art_name}」{review_name}通过")
                     continue
 
-                await emit("revise", f"正在根据{review_name}反馈生成修订补丁...")
-                patch_buffer = ""
+                await emit("revise", f"正在根据{review_name}反馈修订文档...")
+                revised_buffer = ""
                 async for delta in _stream_chat(
-                    messages=[{"role": "user", "content": _REVISE_PATCH_PROMPT.format(
+                    messages=[{"role": "user", "content": _REVISE_PROMPT.format(
                         persona=persona, original=current_content, issues_json=review_raw,
                     )}],
-                    max_tokens=1500,
+                    max_tokens=_resolve_max_tokens(art.get("_cmd_code", "")),
                 ):
-                    patch_buffer += delta
+                    revised_buffer += delta
                     await emit("revise:stream", delta)
 
-                revised, n_applied = _apply_patches(current_content, patch_buffer)
-                if n_applied > 0:
-                    current_content = revised
-                    await emit("revise:applied", f"已应用 {n_applied} 处补丁修订")
-                elif "NO_CHANGES" in patch_buffer:
-                    await emit("pass", f"「{art_name}」{review_name}无需修订")
+                revised_buffer = revised_buffer.strip()
+                if revised_buffer and revised_buffer != "NO_CHANGES":
+                    # 对测试代码，修订后再验证一次
+                    if art.get("type") == "test":
+                        re_validation = await _validate_test_code(
+                            {"content": revised_buffer, "type": "test"}, emit
+                        )
+                        if not re_validation["valid"]:
+                            await emit("revise:warning", "修订后仍有代码问题，保留原版本 + 标记待人工审查")
+                            art["_needs_manual_review"] = True
+                            continue  # 不替换，保留原版本
+                    current_content = revised_buffer
+                    await emit("revise:applied", "已根据审查反馈完成修订")
                 else:
-                    await emit("revise:warn", f"补丁未能匹配原文，保留原内容")
+                    await emit("pass", f"「{art_name}」{review_name}无需修订")
             except Exception as exc:
                 await emit(f"error:review", f"{review_name}失败：{exc}，跳过该轮审查")
                 continue
 
         artifacts[i]["content"] = current_content
         artifacts[i]["summary"] = f"[经 {art_review_rounds} 轮审查] " + art.get("summary", "")
+
+        # 信任度标记
+        if art.get("_needs_manual_review"):
+            artifacts[i]["trustLevel"] = "needs_review"
+        elif art.get("_validation_issues"):
+            artifacts[i]["trustLevel"] = "reviewed"
+        else:
+            artifacts[i]["trustLevel"] = "verified"
+
         await emit("output", f"「{art_name}」定稿完成（经 {art_review_rounds} 轮审查）")
+
+    # 未进入审查的产出物标记信任度
+    for art in artifacts:
+        if "trustLevel" not in art:
+            if art.get("type") == "error":
+                art["trustLevel"] = "failed"
+            else:
+                art["trustLevel"] = "verified"
 
     # 清理内部字段
     for art in artifacts:
         art.pop("_cmd_code", None)
+        art.pop("_validation_issues", None)
+        art.pop("_needs_manual_review", None)
 
     # ━━ 阶段 3: 知识沉淀（仅限特定角色） ━━
     context_updates: list[dict] = []
