@@ -45,9 +45,9 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     Change Log, and Status</critical>
   <critical>Execute ALL steps in exact order; do NOT skip steps</critical>
   <critical>Absolutely DO NOT stop because of "milestones", "significant progress", or "session boundaries". Continue in a single execution
-    until the story is COMPLETE (all ACs satisfied and all tasks/subtasks checked) UNLESS a HALT condition is triggered or the USER gives
-    other instruction.</critical>
-  <critical>Do NOT schedule a "next session" or request review pauses unless a HALT condition applies. Only Step 6 decides completion.</critical>
+    until the story is COMPLETE (all ACs satisfied and all tasks/subtasks checked) UNLESS a HALT condition is triggered, a CHECKPOINT is
+    reached, or the USER gives other instruction.</critical>
+  <critical>Do NOT schedule a "next session" or request review pauses unless a HALT condition or CHECKPOINT applies. Only Step 6 decides completion.</critical>
   <critical>User skill level ({user_skill_level}) affects conversation style ONLY, not code updates.</critical>
 
   <step n="1" goal="Find next ready story and load it" tag="sprint-status">
@@ -158,6 +158,22 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     <anchor id="task_check" />
 
     <action>Parse sections: Story, Acceptance Criteria, Tasks/Subtasks, Dev Notes, Dev Agent Record, File List, Change Log, Status</action>
+
+    <!-- SESSION RECOVERY: detect and resume from interrupted sessions -->
+    <action>Scan Tasks/Subtasks for mix of checked [x] and unchecked [ ] items</action>
+    <check if="some tasks are [x] and some are [ ] (interrupted session detected)">
+      <action>Count completed tasks (checked [x]) and remaining tasks (unchecked [ ])</action>
+      <action>Verify that code files listed in File List actually exist and match expectations</action>
+      <output>⏯️ **Resuming Interrupted Session**
+
+        Story: {{story_key}}
+        Completed tasks: {{completed_count}} / {{total_count}}
+        Remaining tasks: {{remaining_count}}
+
+        Picking up from first unchecked task: {{next_task_description}}
+      </output>
+      <action>Skip to first unchecked [ ] task — do NOT re-implement completed tasks</action>
+    </check>
 
     <action>Load comprehensive context from story file's Dev Notes section</action>
     <action>Extract developer guidance from Dev Notes: architecture requirements, previous learnings, technical specifications</action>
@@ -350,6 +366,33 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     </check>
 
     <action>Save the story file</action>
+
+    <!-- WIP COMMIT: checkpoint after each completed task for session recovery -->
+    <action>Stage all changed files and create a WIP commit:
+      git add -A && git commit -m "wip({{story_key}}): complete task {{task_number}} — {{task_description_short}}"
+      This ensures progress is preserved if the session is interrupted.
+    </action>
+
+    <!-- INCREMENTAL REVIEW CHECKPOINT for large stories -->
+    <action>Count total tasks in story and current completed task number</action>
+    <check if="total tasks > 3 AND current task is a major task boundary (not a subtask)">
+      <output>📋 **Checkpoint — Task {{task_number}}/{{total_tasks}} Complete**
+
+        ✅ Completed: {{task_description}}
+        📁 Files changed so far: {{file_count}}
+        🧪 Tests: {{test_status}}
+
+        Remaining tasks: {{remaining_tasks_summary}}
+
+        **Continue to next task, or would you like to review progress so far?**
+      </output>
+      <action>WAIT for user response (max 30 seconds — if no response, continue automatically)</action>
+      <check if="user requests review">
+        <action>Show summary of all changes so far (git diff --stat from story branch start)</action>
+        <action>Wait for user to confirm continuation</action>
+      </check>
+    </check>
+
     <action>Determine if more incomplete tasks remain</action>
     <action if="more tasks remain">
       <goto step="5">Next task</goto>
@@ -408,6 +451,12 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     <action if="regression failures exist">HALT - Fix regression issues before completing</action>
     <action if="File List is incomplete">HALT - Update File List with all changed files</action>
     <action if="definition-of-done validation fails">HALT - Address DoD failures before completing</action>
+
+    <!-- AUTO-TRIGGER SR: squash WIP commits and submit for human review -->
+    <action>Squash all WIP commits into a single clean commit:
+      git reset --soft {{story_branch_start}} && git commit -m "feat({{story_key}}): {{story_summary}}"
+    </action>
+    <action>Invoke bmad-submit-review (SR) skill to generate structured PR and wait for human approval</action>
   </step>
 
   <step n="10" goal="Completion communication and user support">

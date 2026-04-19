@@ -295,32 +295,50 @@ async def _commander_loop(
     if saved:
         # 从暂停点恢复：加载历史消息，追加审批结果作为 tool response
         messages: list[dict] = json.loads(saved["messages"])
-        # 构建完整的 invoke_agent 工具返回值（包含产出物 + 审批状态），
-        # 让 Commander 明确知道：步骤已完成 + 已批准，继续执行下一步
-        step_id_approved = (approval_result or {}).get("step_id")
-        if step_id_approved:
+        step_id_in_result = (approval_result or {}).get("step_id")
+
+        if "skip_interview" in (approval_result or {}):
+            # 访谈阶段恢复：用户已回答，告知 Commander 重新调用 invoke_agent
+            tool_content = {
+                "status": "awaiting_user_input",
+                "step_id": step_id_in_result or "",
+                "message": (approval_result or {}).get(
+                    "message",
+                    f"用户已回复。请再次调用 invoke_agent(step_id='{step_id_in_result}') 继续执行该步骤。",
+                ),
+            }
+            save_commander_event(
+                req_id, "commander_thinking", "commander", "Commander",
+                "用户已提供信息，重新调用 Agent 继续执行...",
+            )
+        elif step_id_in_result:
+            # 审批通过恢复：构建完整 invoke_agent 返回值，让 Commander 继续下一步
             req_fresh = get_requirement(req_id)
             approved_step = next(
-                (s for s in req_fresh["pipeline"] if s["id"] == step_id_approved), None
+                (s for s in req_fresh["pipeline"] if s["id"] == step_id_in_result), None
             )
             tool_content = {
-                "step_id": step_id_approved,
+                "step_id": step_id_in_result,
                 "status": "done",
                 "artifacts": (approved_step.get("artifacts") if approved_step else None)
                              or (approval_result or {}).get("artifacts", []),
                 "approved": True,
             }
+            save_commander_event(
+                req_id, "commander_thinking", "commander", "Commander",
+                "审批已通过，恢复执行流水线...",
+            )
         else:
             tool_content = approval_result or {"approved": True}
+            save_commander_event(
+                req_id, "commander_thinking", "commander", "Commander",
+                "审批已通过，恢复执行流水线...",
+            )
         messages.append({
             "role": "tool",
             "tool_call_id": saved["pendingToolCallId"],
             "content": json.dumps(tool_content, ensure_ascii=False),
         })
-        save_commander_event(
-            req_id, "commander_thinking", "commander", "Commander",
-            "审批已通过，恢复执行流水线...",
-        )
     else:
         # 全新启动 or 中断后 resume（无 saved state）
         done_steps = [s for s in req["pipeline"] if s.get("status") == "done"]

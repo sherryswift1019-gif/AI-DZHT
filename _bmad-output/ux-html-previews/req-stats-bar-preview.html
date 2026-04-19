@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>需求统计栏 — UX Preview</title>
+<style>
+/* ═══════════════════════════════════════
+   DESIGN TOKENS — Dual Theme
+═══════════════════════════════════════ */
+
+[data-theme="light"] {
+  --bg-base:        #F5F5F7;
+  --bg-panel:       #FFFFFF;
+  --bg-panel-2:     #F5F5F7;
+  --bg-panel-3:     #E8E8ED;
+  --bg-hover:       rgba(0,0,0,0.04);
+  --border:         rgba(0,0,0,0.08);
+  --border-strong:  rgba(0,0,0,0.16);
+  --text-1:         #1D1D1F;
+  --text-2:         #6E6E73;
+  --text-3:         #AEAEB2;
+  --shadow:         0 2px 10px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05);
+  --blue:           #007AFF;
+  --danger:         #FF3B30;
+  --success:        #34C759;
+  --warning:        #FF9500;
+  --amber:          #c98a1e;
+  --accent:         #007AFF;
+  --attention-surface: rgba(255, 149, 0, 0.06);
+}
+
+[data-theme="dark"], :root {
+  --bg-base:        #000000;
+  --bg-panel:       #1C1C1E;
+  --bg-panel-2:     #2C2C2E;
+  --bg-panel-3:     #3A3A3C;
+  --bg-hover:       rgba(255,255,255,0.05);
+  --border:         rgba(255,255,255,0.09);
+  --border-strong:  rgba(255,255,255,0.18);
+  --text-1:         #FFFFFF;
+  --text-2:         #AEAEB2;
+  --text-3:         #636366;
+  --shadow:         0 4px 16px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3);
+  --blue:           #0A84FF;
+  --danger:         #FF453A;
+  --success:        #30D158;
+  --warning:        #FF9F0A;
+  --amber:          #f5a623;
+  --accent:         #0A84FF;
+  --attention-surface: rgba(255, 159, 10, 0.06);
+}
+
+/* ═══════════════════════════════════════
+   BASE
+═══════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-1);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  padding: 32px 24px;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* ═══════════════════════════════════════
+   PREVIEW SHELL
+═══════════════════════════════════════ */
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 40px;
+}
+
+.preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.theme-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-3);
+  transition: all 0.2s ease;
+}
+
+.theme-btn.active {
+  background: var(--bg-panel);
+  color: var(--text-1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  margin-bottom: 16px;
+  padding-left: 2px;
+}
+
+.section-gap {
+  margin-top: 48px;
+}
+
+/* ═══════════════════════════════════════
+   MOCK PAGE HERO (Context Container)
+═══════════════════════════════════════ */
+
+.hero-mock {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: var(--shadow);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.hero-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+/* Left: project identity mock */
+.project-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.project-emoji {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3730a3, #7c3aed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.project-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.project-code {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--bg-panel-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+/* Right: stats area */
+.stats-area {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ═══════════════════════════════════════
+   STAT CHIP (Shared)
+═══════════════════════════════════════ */
+
+.stat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 48px;
+}
+
+.stat-chip__value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.stat-chip__label {
+  font-size: 10px;
+  color: var(--text-3);
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════
+   BEFORE — Flat row (current design)
+═══════════════════════════════════════ */
+
+/* No extra styling needed — just flat chips in a flex row */
+
+/* ═══════════════════════════════════════
+   AFTER — Grouped layout (new design)
+═══════════════════════════════════════ */
+
+.attention-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 8px;
+  padding: 6px 12px;
+  background-color: var(--attention-surface);
+}
+
+.progress-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.total-label {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Settings button mock */
+.settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel-2);
+  color: var(--text-2);
+  cursor: default;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.settings-icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+
+/* ═══════════════════════════════════════
+   SCENARIO CARDS
+═══════════════════════════════════════ */
+
+.scenarios {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.scenario-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
+/* ═══════════════════════════════════════
+   ANNOTATION
+═══════════════════════════════════════ */
+
+.annotation {
+  margin-top: 24px;
+  padding: 12px 16px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.annotation strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.annotation-list {
+  margin-top: 6px;
+  padding-left: 16px;
+}
+
+.annotation-list li {
+  margin: 3px 0;
+}
+
+.color-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+/* ═══════════════════════════════════════
+   COMPARISON LAYOUT
+═══════════════════════════════════════ */
+
+.comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 12px;
+}
+
+.comparison-col {
+  min-width: 0;
+}
+
+.badge-before {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--danger-sub, rgba(255,59,48,0.08));
+  color: var(--danger);
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.badge-after {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(48,209,88,0.12);
+  color: var(--success);
+  margin-left: 8px;
+  vertical-align: middle;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════
+     PREVIEW HEADER + THEME TOGGLE
+═══════════════════════════════════════ -->
+<div class="preview-header">
+  <span class="preview-title">UX Preview / 需求统计栏重构</span>
+  <div class="theme-toggle">
+    <button class="theme-btn active" data-theme-val="dark" onclick="setTheme('dark')">Dark</button>
+    <button class="theme-btn" data-theme-val="light" onclick="setTheme('light')">Light</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     SECTION 1: BEFORE / AFTER 对比
+═══════════════════════════════════════ -->
+<div class="comparison">
+
+  <!-- BEFORE -->
+  <div class="comparison-col">
+    <div class="section-label">Before <span class="badge-before">Current</span></div>
+    <div class="hero-mock">
+      <div class="hero-row">
+        <div class="project-identity">
+          <div class="project-emoji">&#x1F680;</div>
+          <span class="project-name">AI-DZHT</span>
+          <span class="project-code">PROJ-001</span>
+        </div>
+        <div class="stats-area">
+          <div class="stat-chip">
+            <span class="stat-chip__value" style="color: var(--text-3)">2</span>
+            <span class="stat-chip__label">待执行</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-chip__value" style="color: var(--blue)">4</span>
+            <span class="stat-chip__label">执行中</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-chip__value" style="color: #ff9f0a">2</span>
+            <span class="stat-chip__label">待审批</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-chip__value" style="color: var(--danger)">1</span>
+            <span class="stat-chip__label">阻塞</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-chip__value" style="color: var(--success)">2</span>
+            <span class="stat-chip__label">已完成</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-chip__value" style="color: var(--text-2)">11</span>
+            <span class="stat-chip__label">总需求</span>
+          </div>
+          <button class="settings-btn">
+            <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            项目设置
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="annotation">
+      <strong>问题：</strong>
+      <ul class="annotation-list">
+        <li>「执行中 4」包含 2 条实际处于待审批的需求 — 重叠计数，总和 &gt; 11</li>
+        <li>缺少「待输入」状态，用户不知有需求等自己操作</li>
+        <li>6 个芯片同等视觉权重，关键状态无法快速感知</li>
+        <li>「待审批」使用硬编码 <code>#ff9f0a</code>，非 CSS 变量</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- AFTER -->
+  <div class="comparison-col">
+    <div class="section-label">After <span class="badge-after">Proposed</span></div>
+    <div class="hero-mock">
+      <div class="hero-row">
+        <div class="project-identity">
+          <div class="project-emoji">&#x1F680;</div>
+          <span class="project-name">AI-DZHT</span>
+          <span class="project-code">PROJ-001</span>
+        </div>
+        <div class="stats-area">
+          <!-- 介入组 -->
+          <div class="attention-group">
+            <div class="stat-chip">
+              <span class="stat-chip__value" style="color: var(--warning)">2</span>
+              <span class="stat-chip__label">待审批</span>
+            </div>
+            <div class="stat-chip">
+              <span class="stat-chip__value" style="color: var(--danger)">1</span>
+              <span class="stat-chip__label">阻塞</span>
+            </div>
+            <div class="stat-chip">
+              <span class="stat-chip__value" style="color: var(--amber)">1</span>
+              <span class="stat-chip__label">待输入</span>
+            </div>
+          </div>
+          <!-- 分隔线 -->
+          <div class="stat-divider"></div>
+          <!-- 进度组 -->
+          <div class="progress-group">
+            <div class="stat-chip">
+              <span class="stat-chip__value" style="color: var(--blue)">3</span>
+              <span class="stat-chip__label">执行中</span>
+            </div>
+            <div class="stat-chip">
+              <span class="stat-chip__value" style="color: var(--text-3)">2</span>
+              <span class="stat-chip__label">待执行</span>
+            </div>
+            <div class="stat-chip">
+              <span class="stat-chip__value" style="color: var(--success)">2</span>
+              <span class="stat-chip__label">已完成</span>
+            </div>
+          </div>
+          <!-- 总数 -->
+          <span class="total-label">共 11</span>
+          <button class="settings-btn">
+            <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            项目设置
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="annotation">
+      <strong>改进：</strong>
+      <ul class="annotation-list">
+        <li>互斥分类 — 6 个桶求和 === 总需求数，无重叠</li>
+        <li>新增「待输入」状态，覆盖 <code>pending_input</code> 步骤</li>
+        <li>暖色介入组容器 <span class="color-swatch" style="background: var(--attention-surface); border: 1px solid var(--warning)"></span> 引导视线聚焦需行动的项</li>
+        <li>所有颜色走 CSS 变量，双主题自适应</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════
+     SECTION 2: 边界场景
+═══════════════════════════════════════ -->
+<div class="section-gap">
+  <div class="section-label">Edge Cases / 边界场景</div>
+  <div class="scenarios">
+
+    <!-- Scenario A: 全部已完成 -->
+    <div>
+      <div class="scenario-tag">A. 全部已完成 — 介入组全零</div>
+      <div class="hero-mock">
+        <div class="hero-row">
+          <div class="project-identity">
+            <div class="project-emoji">&#x2705;</div>
+            <span class="project-name">Release v2.1</span>
+            <span class="project-code">PROJ-042</span>
+          </div>
+          <div class="stats-area">
+            <div class="attention-group">
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--warning)">0</span>
+                <span class="stat-chip__label">待审批</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--danger)">0</span>
+                <span class="stat-chip__label">阻塞</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--amber)">0</span>
+                <span class="stat-chip__label">待输入</span>
+              </div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="progress-group">
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--blue)">0</span>
+                <span class="stat-chip__label">执行中</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--text-3)">0</span>
+                <span class="stat-chip__label">待执行</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--success)">8</span>
+                <span class="stat-chip__label">已完成</span>
+              </div>
+            </div>
+            <span class="total-label">共 8</span>
+            <button class="settings-btn">
+              <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              项目设置
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario B: 零需求项目 -->
+    <div>
+      <div class="scenario-tag">B. 零需求项目 — 所有芯片归零</div>
+      <div class="hero-mock">
+        <div class="hero-row">
+          <div class="project-identity">
+            <div class="project-emoji">&#x1F4CB;</div>
+            <span class="project-name">新项目</span>
+            <span class="project-code">PROJ-099</span>
+          </div>
+          <div class="stats-area">
+            <div class="attention-group">
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--warning)">0</span>
+                <span class="stat-chip__label">待审批</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--danger)">0</span>
+                <span class="stat-chip__label">阻塞</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--amber)">0</span>
+                <span class="stat-chip__label">待输入</span>
+              </div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="progress-group">
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--blue)">0</span>
+                <span class="stat-chip__label">执行中</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--text-3)">0</span>
+                <span class="stat-chip__label">待执行</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--success)">0</span>
+                <span class="stat-chip__label">已完成</span>
+              </div>
+            </div>
+            <span class="total-label">共 0</span>
+            <button class="settings-btn">
+              <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              项目设置
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario C: 高紧急度 -->
+    <div>
+      <div class="scenario-tag">C. 高紧急度 — 多项需人工介入</div>
+      <div class="hero-mock">
+        <div class="hero-row">
+          <div class="project-identity">
+            <div class="project-emoji">&#x1F525;</div>
+            <span class="project-name">Hotfix Sprint</span>
+            <span class="project-code">PROJ-007</span>
+          </div>
+          <div class="stats-area">
+            <div class="attention-group">
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--warning)">5</span>
+                <span class="stat-chip__label">待审批</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--danger)">3</span>
+                <span class="stat-chip__label">阻塞</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--amber)">2</span>
+                <span class="stat-chip__label">待输入</span>
+              </div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="progress-group">
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--blue)">12</span>
+                <span class="stat-chip__label">执行中</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--text-3)">6</span>
+                <span class="stat-chip__label">待执行</span>
+              </div>
+              <div class="stat-chip">
+                <span class="stat-chip__value" style="color: var(--success)">19</span>
+                <span class="stat-chip__label">已完成</span>
+              </div>
+            </div>
+            <span class="total-label">共 47</span>
+            <button class="settings-btn">
+              <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              项目设置
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     SECTION 3: 色彩 Token 速查
+═══════════════════════════════════════ -->
+<div class="section-gap">
+  <div class="section-label">Color Tokens / 色彩变量速查</div>
+  <div class="hero-mock" style="padding: 16px 20px;">
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--warning); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--warning</div>
+          <div style="font-size: 10px; color: var(--text-3);">待审批</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--danger); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--danger</div>
+          <div style="font-size: 10px; color: var(--text-3);">阻塞</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--amber); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--amber</div>
+          <div style="font-size: 10px; color: var(--text-3);">待输入 (new)</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--attention-surface); border: 1px solid var(--warning); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--attention-surface</div>
+          <div style="font-size: 10px; color: var(--text-3);">介入组背景 (new)</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--blue); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--blue</div>
+          <div style="font-size: 10px; color: var(--text-3);">执行中</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--text-3); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--text-3</div>
+          <div style="font-size: 10px; color: var(--text-3);">待执行</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--success); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--success</div>
+          <div style="font-size: 10px; color: var(--text-3);">已完成</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--border); border: 1px solid var(--border-strong); flex-shrink: 0;"></span>
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-1);">--border</div>
+          <div style="font-size: 10px; color: var(--text-3);">分隔线</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     SECTION 4: 互斥分类逻辑图
+═══════════════════════════════════════ -->
+<div class="section-gap">
+  <div class="section-label">Classification Logic / 互斥分类逻辑</div>
+  <div class="hero-mock" style="padding: 20px 24px;">
+    <div style="font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; line-height: 1.8; color: var(--text-2);">
+      <div style="color: var(--text-3); margin-bottom: 4px;">// getDisplayStatus(requirement) &rarr; 唯一归属</div>
+      <div>
+        <span style="color: var(--accent);">if</span> req.status === <span style="color: var(--success);">'done'</span>
+        &nbsp;&nbsp;&nbsp;&nbsp;&rarr; <span style="color: var(--success); font-weight: 600;">done</span>
+      </div>
+      <div>
+        <span style="color: var(--accent);">if</span> req.status === <span style="color: var(--danger);">'blocked'</span>
+        &nbsp;&rarr; <span style="color: var(--danger); font-weight: 600;">blocked</span>
+      </div>
+      <div>
+        <span style="color: var(--accent);">if</span> req.status === <span style="color: var(--text-3);">'queued'</span>
+        &nbsp;&nbsp;&rarr; <span style="color: var(--text-3); font-weight: 600;">queued</span>
+      </div>
+      <div style="margin-top: 4px; padding-left: 0;">
+        <span style="color: var(--accent);">if</span> req.status === <span style="color: var(--blue);">'running'</span>:
+      </div>
+      <div style="padding-left: 20px;">
+        currentStep.status === <span style="color: var(--warning);">pending_approval | pending_advisory_approval</span>
+        &rarr; <span style="color: var(--warning); font-weight: 600;">pending_approval</span>
+      </div>
+      <div style="padding-left: 20px;">
+        currentStep.status === <span style="color: var(--amber);">pending_input</span>
+        &rarr; <span style="color: var(--amber); font-weight: 600;">pending_input</span>
+      </div>
+      <div style="padding-left: 20px;">
+        <span style="color: var(--text-3);">else</span>
+        &rarr; <span style="color: var(--blue); font-weight: 600;">running</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-theme-val') === theme);
+  });
+}
+</script>
+</body>
+</html>

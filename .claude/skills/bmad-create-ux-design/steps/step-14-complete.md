@@ -135,21 +135,64 @@ Congratulate the user on the completion you both completed together of the UX.
 - [ ] Workflow status file updated with completion
 - [ ] Next steps clearly communicated
 
-## NEXT STEPS GUIDANCE:
+## STEP 14 SELF-CHECK (Before Declaring Complete):
 
-**Immediate Options:**
+Run these 4 consistency checks before announcing completion. If any fail, note the issues in the spec and inform the user.
 
-1. **Wireframe Generation** - Create low-fidelity layouts based on UX spec
-2. **Interactive Prototype** - Build clickable prototypes for testing
-3. **Solution Architecture** - Technical design with UX context
-4. **Figma Visual Design** - High-fidelity UI implementation
-5. **Epic Creation** - Break down UX requirements for development
+**Check 1: Color Token Uniqueness**
+- Verify no duplicate token values in the design token set
+- Semantic tokens (--color-primary, --color-danger, --color-success, etc.) must not accidentally share the same hex value
+- If duplicates found: list them explicitly in the spec for the team to resolve before implementation
 
-**Recommended Sequence:**
-For design-focused teams: Wireframes → Prototypes → Figma Design → Development
-For technical teams: Architecture → Epic Creation → Development
+**Check 2: Typography Discipline**
+- Confirm only ONE body font is in use (two body fonts = visual noise without intentional reason)
+- Verify heading font + body font have clear optical contrast — similar weight families defeat the purpose
+- Cross-check both fonts against the Step 6 Font Blacklist (Poppins, Montserrat+Open Sans, Nunito)
+- If fonts are from the blacklist: flag and recommend alternatives
 
-Consider team capacity, timeline, and whether user validation is needed before implementation.
+**Check 3: Core Component State Coverage**
+- Confirm all core components (forms, buttons, data displays) have: default + error state + loading state defined
+- Check that interactive forms have validation error states with microcopy
+- Check that action buttons have loading states (not just default + hover)
+- Check that data lists/tables have empty states with actionable copy
+- If missing: flag the specific components in the spec
+
+**Check 4: AI Pattern Audit**
+Check the design directions and component patterns against the AI Slippery Slope Blacklist:
+- [ ] Purple/indigo gradients as default palette choice
+- [ ] 3-column "feature benefits" grid layout
+- [ ] Colored icon circles in feature/info sections
+- [ ] Everything center-aligned with uniform spacing
+- [ ] Identical bubble/card borders on all containers
+- [ ] Decorative background blobs or wave shapes
+- [ ] Emoji used as design/UI elements
+- [ ] Colored left-border "tip" cards
+- [ ] Generic hero copy ("Transform your workflow" / "Everything you need")
+- [ ] Cookie-cutter section rhythm: hero → features → testimonials → CTA
+
+If any are present in the spec: flag them explicitly and ask the user to confirm intentionality before finalizing.
+
+**If all 4 checks pass → proceed to HD Trigger below.**
+**If issues found → document them in spec Part 6 (Decision Log) and present to user before completing.**
+
+## HD TRIGGER (After Self-Check Passes):
+
+After self-check is complete, offer handoff document creation:
+
+```
+"UX Design Specification complete for {{project_name}}! ✅ Self-check passed.
+
+Before we close out, would you like to create structured handoff documents 
+for your development team? These translate the UX spec into precise component 
+specifications with complete interaction states and acceptance criteria — 
+exactly what developers need to implement without guessing.
+
+[Y] Yes, create handoff documents now (recommended before development starts)
+[N] Skip, the UX spec is sufficient for our team"
+```
+
+- If Y → invoke `bmad-ux-handoff` skill (HD capability, sub-flow — returns here after completion)
+- If N → proceed to final completion summary in section 1 above
 
 ## WORKFLOW FINALIZATION:
 

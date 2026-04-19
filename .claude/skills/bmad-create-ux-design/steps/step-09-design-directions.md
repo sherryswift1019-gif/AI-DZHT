@@ -218,8 +218,20 @@ When user selects 'C', append the content directly to the document using the str
 ❌ **CRITICAL**: Proceeding with 'C' without fully reading and understanding the next step file
 ❌ **CRITICAL**: Making decisions without complete understanding of step requirements and protocols
 
+## HG TRIGGER (After Design Direction Completion):
+
+After user selects 'C' and content is saved, offer HTML preview generation:
+
+```
+"Design direction defined! Would you like me to generate an interactive HTML preview 
+to visualize this direction? You can see the actual colors, typography, and layout 
+before we commit to the component strategy.
+
+[Y] Yes, generate interactive HTML preview now (uses Pretext layout engine)
+[N] Skip, proceed to user journey mapping"
+```
+
+- If Y → invoke `bmad-ux-html-gen` skill (sub-flow, returns to CU Step 10 after completion)
+- If N → proceed to Step 10 normally
+
 ## NEXT STEP:
-
-After user selects 'C' and content is saved to document, load `./step-10-user-journeys.md` to design user journey flows.
-
-Remember: Do NOT proceed to step-10 until user explicitly selects 'C' from the A/P/C menu and content is saved!

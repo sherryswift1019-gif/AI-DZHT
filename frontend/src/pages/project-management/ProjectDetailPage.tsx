@@ -11,6 +11,7 @@ import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer'
 import { WorkflowConfigModal } from '@/components/requirements/WorkflowConfigModal'
 import { mockMembers } from '@/mocks/data/projects'
 import { cn } from '@/lib/utils'
+import { computeStatCounts } from '@/lib/computeStatCounts'
 import {
   useRequirementList,
   useCreateRequirement,
@@ -126,13 +127,17 @@ export function ProjectDetailPage() {
     }
   }, [requirements, selectedReqId])
 
-  const runningCount = requirements.filter((r) => r.status === 'running').length
-  const blockedCount = requirements.filter((r) => r.status === 'blocked').length
-  const queuedCount = requirements.filter((r) => r.status === 'queued').length
-  const doneCount = requirements.filter((r) => r.status === 'done').length
-  const pendingApprovalCount = requirements.filter((r) =>
-    r.pipeline.some((s) => s.status === 'pending_approval' || s.status === 'pending_advisory_approval'),
-  ).length
+  // 互斥分类：每条需求仅归入一个桶，求和 === requirements.length
+  const statCounts = useMemo(() => computeStatCounts(requirements), [requirements])
+
+  const {
+    queued: queuedCount,
+    running: runningCount,
+    pendingApproval: pendingApprovalCount,
+    pendingInput: pendingInputCount,
+    blocked: blockedCount,
+    done: doneCount,
+  } = statCounts
 
   const filteredReqs = useMemo(() => {
     if (reqFilter === 'all') return requirements
@@ -381,12 +386,30 @@ export function ProjectDetailPage() {
 
             {/* Right: req stats + settings */}
             <div className="flex shrink-0 items-center gap-3">
-              <StatChip label="待执行" value={queuedCount} color="var(--text-3)" />
-              <StatChip label="执行中" value={runningCount} color="var(--blue)" />
-              <StatChip label="待审批" value={pendingApprovalCount} color="#ff9f0a" />
-              <StatChip label="阻塞" value={blockedCount} color="var(--danger)" />
-              <StatChip label="已完成" value={doneCount} color="var(--success)" />
-              <StatChip label="总需求" value={requirements.length} color="var(--text-2)" />
+              {/* 介入组 — 暖色背景 */}
+              <div
+                className="flex items-center gap-3 rounded-lg px-3 py-1.5"
+                style={{ backgroundColor: 'var(--attention-surface)' }}
+              >
+                <StatChip label="待审批" value={pendingApprovalCount} color="var(--warning)" />
+                <StatChip label="阻塞" value={blockedCount} color="var(--danger)" />
+                <StatChip label="待输入" value={pendingInputCount} color="var(--amber)" />
+              </div>
+
+              {/* 分隔线 */}
+              <div className="h-6 w-px bg-[var(--border)]" />
+
+              {/* 进度组 */}
+              <div className="flex items-center gap-3">
+                <StatChip label="执行中" value={runningCount} color="var(--blue)" />
+                <StatChip label="待执行" value={queuedCount} color="var(--text-3)" />
+                <StatChip label="已完成" value={doneCount} color="var(--success)" />
+              </div>
+
+              {/* 总数 */}
+              <span className="text-xs tabular-nums text-[var(--text-3)]">
+                共 {requirements.length}
+              </span>
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 py-1.5 text-xs font-medium text-[var(--text-2)] hover:text-[var(--text-1)] hover:border-[var(--accent)] transition-colors"

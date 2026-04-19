@@ -185,6 +185,22 @@ When user selects 'C', append the content directly to the document. Only after t
 ❌ **CRITICAL**: Proceeding with 'C' without fully reading and understanding the next step file
 ❌ **CRITICAL**: Making decisions without complete understanding of step requirements and protocols
 
+## IA TRIGGER (After Discovery Completion):
+
+Before loading Step 3, offer IA capability:
+
+```
+"Discovery complete! Before we define the core experience, would you like to run 
+an Information Architecture session first? This maps your sitemap and navigation 
+structure — the skeleton that guides all subsequent design decisions.
+
+[Y] Yes, run IA planning now (recommended for new products or complex nav)
+[N] Skip, proceed directly to core experience definition"
+```
+
+- If Y → invoke `bmad-ux-ia` skill (sub-flow, Sally pauses CU at Step 2, returns to Step 3 after IA completion)
+- If N → proceed to Step 3 normally
+
 ## NEXT STEP:
 
 Remember: Do NOT proceed to step-03 until user explicitly selects 'C' from the menu and content is saved!

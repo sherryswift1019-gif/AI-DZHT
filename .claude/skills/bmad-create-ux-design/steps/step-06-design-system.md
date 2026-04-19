@@ -246,6 +246,57 @@ When user selects 'C', append the content directly to the document using the str
 ❌ **CRITICAL**: Proceeding with 'C' without fully reading and understanding the next step file
 ❌ **CRITICAL**: Making decisions without complete understanding of step requirements and protocols
 
+## AESTHETIC DIRECTION CHECKPOINT (Before Proceeding to Step 7):
+
+After the design system decision is confirmed and before loading Step 7, run this inline aesthetic direction decision:
+
+"Before we define the core experience, let's lock in the **aesthetic personality** of {{project_name}}. This shapes how your design system *feels* in practice — the difference between a design system that works and one that actually looks intentional.
+
+**10 Aesthetic Directions:**
+
+| Direction | Character | Execution Risk |
+|-----------|-----------|----------------|
+| Minimalism | Purposeful whitespace, essential elements only | ✅ SAFE |
+| Editorial | Typography-led, bold visual hierarchy | ✅ SAFE |
+| Organic | Natural forms, warm textures, approachable | ✅ SAFE |
+| Luxury | Premium restraint, refined micro-details | ⚠️ MODERATE |
+| Playful | Energetic, expressive, delightful interactions | ⚠️ MODERATE |
+| Art Deco | Geometric elegance, structured ornamentation | ⚠️ MODERATE |
+| Industrial | Raw honesty, utilitarian, no decoration for its own sake | ⚠️ MODERATE |
+| Retro-Future | Nostalgic tech aesthetic, bold synthetic palette | 🔴 HIGH RISK |
+| Maximalism | Dense layering, complex visual tension, high stimulation | 🔴 HIGH RISK |
+| Brutalist | Convention-breaking, intentionally stark and functional | 🔴 HIGH RISK |
+
+**Font Blacklist** (these signal 'AI-generated template' to experienced eyes):
+- Poppins as body text — the #1 AI default, instantly recognizable as generic
+- Montserrat + Open Sans combination — the universal AI starter kit
+- Nunito for professional/enterprise contexts — reads as 'generic friendly app'
+- Any font chosen without rationale tied to the aesthetic direction
+
+**⚠️ HIGH RISK directions** require deliberate, expert execution. One imprecise decision and the direction reads as accidental rather than intentional. Before choosing these: 'Does our team have the design maturity to execute this consistently?'
+
+Which direction fits {{project_name}}'s personality and user expectations?"
+
+- Guide through SAFE vs RISK tradeoffs based on project context from Steps 2–5
+- For HIGH RISK selection, require explicit acknowledgment: "This direction demands precision across every design decision. Are you confident in the team's execution capability? (y/n)"
+- Select a font pairing aligned to the chosen direction (avoid blacklisted defaults)
+- **Append the aesthetic direction to the design system content** before saving with 'C':
+
+```markdown
+### Aesthetic Direction
+
+**Direction:** [Chosen direction name]
+**Rationale:** [Why this direction fits the product and user expectations]
+**Key Execution Principles:** [What must be done right for this direction to work]
+
+### Typography Foundation
+
+**Primary Font:** [Chosen font] — [rationale tied to aesthetic direction]
+**Body Font:** [Chosen font] — [why chosen over blacklisted alternatives]
+```
+
+**Note:** This checkpoint runs **inline** within Step 6. Do NOT invoke `bmad-ux-design-system` here — that skill generates a standalone DESIGN.md with full token set for standalone design system creation, which is a separate output from this UX spec step.
+
 ## NEXT STEP:
 
 After user selects 'C' and content is saved to document, load `./step-07-defining-experience.md` to define the core user interaction.

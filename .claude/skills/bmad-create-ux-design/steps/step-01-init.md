@@ -52,7 +52,28 @@ If the document exists and has frontmatter with `stepsCompleted`:
 
 If no document exists or no `stepsCompleted` in frontmatter:
 
-#### A. Input Document Discovery
+#### A. PRD Quick Import (Check First)
+
+Before running the full discovery questionnaire, check for an existing PRD:
+
+```
+IF {planning_artifacts}/*prd*.md exists OR {planning_artifacts}/*brief*.md exists:
+  → Auto-read and extract:
+    - User roles / personas
+    - Core product goals
+    - Feature module list
+    - Known technical constraints
+  → Present extracted summary to user:
+    "I found a PRD and extracted the following context:
+     [show extracted summary, ~10 lines]
+     Is this correct? If yes, I'll skip the discovery questionnaire and jump to Step 3."
+  → If user confirms → set mode = PRD_IMPORT, skip to Step 3 after doc setup
+  → If user wants to adjust → run full Step 2 discovery with PRD as pre-fill
+ELSE:
+  → Run full Step 2 discovery questionnaire (normal flow)
+```
+
+#### B. Input Document Discovery
 
 Discover and load context documents using smart discovery. Documents can be in the following locations:
 - {planning_artifacts}/**

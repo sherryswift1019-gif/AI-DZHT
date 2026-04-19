@@ -68,6 +68,8 @@
   --success-sub:    rgba(52,199,89,0.09);
   --warning:        #FF9500;
   --warning-sub:    rgba(255,149,0,0.09);
+  --amber:          #c98a1e;
+  --attention-surface: rgba(255,149,0,0.06);
   --danger:         #FF3B30;
   --danger-sub:     rgba(255,59,48,0.08);
   --purple-sub:     rgba(175,82,222,0.09);
@@ -115,6 +117,8 @@
   --success-sub:    rgba(48,209,88,0.13);
   --warning:        #FF9F0A;
   --warning-sub:    rgba(255,159,10,0.13);
+  --amber:          #f5a623;
+  --attention-surface: rgba(255,159,10,0.06);
   --danger:         #FF453A;
   --danger-sub:     rgba(255,69,58,0.13);
   --purple-sub:     rgba(191,90,242,0.13);

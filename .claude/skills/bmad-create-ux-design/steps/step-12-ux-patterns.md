@@ -231,6 +231,58 @@ When user selects 'C', append the content directly to the document using the str
 ❌ **CRITICAL**: Proceeding with 'C' without fully reading and understanding the next step file
 ❌ **CRITICAL**: Making decisions without complete understanding of step requirements and protocols
 
+## MICROCOPY SPECIFICATION (Required Within UX Patterns):
+
+Microcopy — the actual words in the interface — directly determines perceived quality. Always define these as part of the UX patterns, not as an afterthought for the developer to fill in.
+
+### Error Message Writing Principles
+
+- ❌ Generic: "Error occurred" / "Invalid input" / "Something went wrong"
+- ✅ Formula: **[What happened in plain language]** + **[Specific next step]**
+- Example: "Email already in use. [Sign in instead] or [Reset your password]"
+- Use business language, not technical language — "Your session expired" not "401 Unauthorized"
+- Always give the user a path forward — never a dead end
+
+### Empty State Templates
+
+Every empty state must do two things: (1) explain why it's empty, (2) guide to the action that fills it.
+
+- ❌ Just an illustration with no actionable text
+- ✅ "No projects yet. [Create your first project →]"
+- ✅ "Nothing here yet — [Import your data] to get started"
+- Empty states are product moments that reduce bounce, not error states to minimize
+
+### Confirmation & Destructive Operation Wording
+
+- Destructive operations (delete, archive, publish, send, revoke) MUST state the consequence, not just ask "Are you sure?"
+- ❌ "Delete item? [Yes] [No]"
+- ✅ "Delete 'Project Alpha'? This removes all tasks permanently and cannot be undone. [Delete permanently] [Keep it]"
+- The destructive action button label must describe what will happen — never "Yes" / "Confirm" / "OK"
+- Non-reversible actions get a separate visual treatment (red button, explicit warning icon)
+
+### Loading State Copy
+
+- ❌ "Loading..." as the universal loading text
+- ✅ Say what's actually happening: "Saving your changes...", "Generating report...", "Connecting to GitHub..."
+- Long operations (>3 seconds): add progress indicator + estimated time if knowable
+- Post-completion: confirm success — "Saved!" not just the spinner disappearing
+
+**Add microcopy examples to every pattern defined in this step** that involves user-facing text. For forms, feedback messages, empty states, and confirmations — specify the actual copy formula, not just the visual design.
+
+**Append microcopy patterns to the document content** in addition to the content structure from section 6:
+
+```markdown
+### Microcopy Patterns
+
+**Error Message Formula:** [Pattern + example]
+
+**Empty State Template:** [Pattern + example]
+
+**Destructive Confirmation Pattern:** [Pattern + button label rules]
+
+**Loading Copy Pattern:** [What to say during short vs. long operations]
+```
+
 ## NEXT STEP:
 
 After user selects 'C' and content is saved to document, load `./step-13-responsive-accessibility.md` to define responsive design and accessibility strategy.
