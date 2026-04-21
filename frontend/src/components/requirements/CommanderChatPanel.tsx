@@ -256,11 +256,13 @@ export function CommanderChatPanel({
               event={item.event}
               isLast={idx === lastSingleIdx}
               pendingStep={pendingStep}
+              pendingInputStep={pendingInputStep}
               requirement={requirement}
               onApproveStep={onApproveStep}
               onDismissAdvisory={onDismissAdvisory}
               onViewArtifact={onViewArtifact}
               isApproving={isApproving}
+              isSubmitting={submitInput.isPending}
             />
           )
         })}
@@ -269,7 +271,9 @@ export function CommanderChatPanel({
         {requirement.status === 'running' && !pendingStep && !pendingInputStep && (
           <div className="flex items-center gap-2 px-2 py-1">
             <Loader2 size={12} className="animate-spin text-purple-400" />
-            <span className="text-[10px] text-[var(--text-3)]">指挥官工作中...</span>
+            <span className="text-[10px] text-[var(--text-3)]">
+              指挥官工作中...
+            </span>
           </div>
         )}
         </div>
@@ -494,20 +498,24 @@ function EventMessage({
   event,
   isLast,
   pendingStep,
+  pendingInputStep,
   requirement,
   onApproveStep,
   onDismissAdvisory,
   onViewArtifact,
   isApproving,
+  isSubmitting,
 }: {
   event: CommanderEvent
   isLast: boolean
   pendingStep: PipelineStep | undefined
+  pendingInputStep: PipelineStep | undefined
   requirement: Requirement
   onApproveStep: (reqId: string, stepId: string) => void
   onDismissAdvisory: (step: PipelineStep) => void
   onViewArtifact?: (stepId: string, artifact: { name: string; type: string; summary: string }) => void
   isApproving?: boolean
+  isSubmitting?: boolean
 }) {
   const { eventType, role, agentName, content, metadata } = event
 
@@ -540,17 +548,127 @@ function EventMessage({
       )
     }
 
+    // Git 错误事件 — 红色可操作卡片
+    if (eventType === 'git_error') {
+      const errorAction = metadata?.action as string | undefined
+      return (
+        <div className="flex items-center justify-center py-2">
+          <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/8 px-3 py-2">
+            <AlertTriangle size={14} className="shrink-0 text-red-400" />
+            <span className="text-[11px] text-red-300">{content}</span>
+            {errorAction === 'check_settings' && (
+              <button
+                className="ml-2 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 transition-colors"
+                onClick={() => {/* TODO: open project settings */}}
+              >
+                打开设置
+              </button>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    // Git PR 创建/关联事件 — 绿色/蓝色胶囊
+    if (eventType === 'git_pr_created' || eventType === 'git_pr_linked') {
+      const prUrl = metadata?.pr_url as string | undefined
+      const prNumber = metadata?.pr_number as number | undefined
+      const isNew = eventType === 'git_pr_created'
+      return (
+        <div className="flex items-center justify-center gap-2 py-2">
+          <div className={cn(
+            'flex items-center gap-1.5 rounded-full border px-3 py-1',
+            isNew
+              ? 'border-green-500/30 bg-green-500/8'
+              : 'border-[rgba(88,166,255,0.3)] bg-[rgba(88,166,255,0.08)]',
+          )}>
+            <GitBranch size={12} className={isNew ? 'text-green-400' : 'text-[#58a6ff]'} />
+            <span className={cn('text-[11px] font-semibold', isNew ? 'text-green-400' : 'text-[#58a6ff]')}>
+              PR #{prNumber}
+            </span>
+          </div>
+          <span className="text-[10px] text-[var(--text-3)]">
+            {isNew ? '已创建' : '已关联'}
+          </span>
+          {prUrl && (
+            <a href={prUrl} target="_blank" rel="noreferrer"
+              className="text-[10px] text-[var(--accent)] hover:underline">
+              查看 →
+            </a>
+          )}
+        </div>
+      )
+    }
+
+    // Git 审查事件
+    if (eventType === 'git_review_started') {
+      return (
+        <div className="flex items-center justify-center gap-2 py-2">
+          <Loader2 size={12} className="animate-spin text-[#58a6ff]" />
+          <span className="text-[11px] text-[var(--text-3)]">{content}</span>
+        </div>
+      )
+    }
+    if (eventType === 'git_review_done') {
+      const verdict = metadata?.verdict as string | undefined
+      const findingsCount = metadata?.findings_count as number | undefined
+      const verdictColor = verdict === 'pass' ? 'text-green-400' : verdict === 'needs_attention' ? 'text-amber-400' : 'text-red-400'
+      const verdictIcon = verdict === 'pass' ? '✅' : verdict === 'needs_attention' ? '⚠️' : '🚫'
+      return (
+        <div className="flex items-center justify-center gap-2 py-2">
+          <div className={cn('flex items-center gap-1.5 rounded-lg border px-3 py-1.5',
+            verdict === 'pass' ? 'border-green-500/30 bg-green-500/8' :
+            verdict === 'needs_attention' ? 'border-amber-500/30 bg-amber-500/8' :
+            'border-red-500/30 bg-red-500/8',
+          )}>
+            <span className="text-[13px]">{verdictIcon}</span>
+            <span className={cn('text-[11px] font-medium', verdictColor)}>{content}</span>
+            {(findingsCount ?? 0) > 0 && (
+              <span className="text-[10px] text-[var(--text-3)]">({findingsCount} 项发现)</span>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    // pipeline_complete — 总结卡片（含 Git 摘要）
+    if (isComplete) {
+      const gitMeta = metadata?.git as { branch?: string; commitCount?: number; additions?: number; deletions?: number; prUrl?: string; prNumber?: number } | null
+      return (
+        <div className="flex items-center justify-center py-2">
+          <div className="rounded-xl border border-green-500/20 bg-green-500/6 px-4 py-3 text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <CheckCircle2 size={14} className="text-green-400" />
+              <span className="text-[12px] font-semibold text-green-400">流水线执行完成</span>
+            </div>
+            <div className="flex items-center justify-center gap-3 text-[11px] text-[var(--text-3)]">
+              {metadata?.steps_done && <span>{metadata.steps_done as number} 步完成</span>}
+              {(metadata?.artifacts_count as number) > 0 && <span>{metadata.artifacts_count as number} 个产出物</span>}
+            </div>
+            {gitMeta?.branch && (
+              <div className="mt-2 flex items-center justify-center gap-2 text-[11px] text-[#58a6ff]">
+                <GitBranch size={11} />
+                <span className="font-mono">{gitMeta.branch}</span>
+                {gitMeta.commitCount && gitMeta.commitCount > 0 && (
+                  <span className="text-[var(--text-3)]">{gitMeta.commitCount} commits · <span className="text-green-400">+{gitMeta.additions ?? 0}</span> <span className="text-red-400">-{gitMeta.deletions ?? 0}</span></span>
+                )}
+                {gitMeta.prUrl && (
+                  <a href={gitMeta.prUrl} target="_blank" rel="noreferrer"
+                    className="text-[var(--accent)] hover:underline">
+                    PR #{gitMeta.prNumber}
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex items-center justify-center gap-1.5 py-2">
-        {isComplete ? (
-          <CheckCircle2 size={12} className="text-[var(--success)]" />
-        ) : (
-          <Info size={12} className="text-[var(--text-3)]" />
-        )}
-        <span className={cn(
-          'text-[11px] font-medium',
-          isComplete ? 'text-[var(--success)]' : 'text-[var(--text-3)]',
-        )}>
+        <Info size={12} className="text-[var(--text-3)]" />
+        <span className="text-[11px] font-medium text-[var(--text-3)]">
           {content}
         </span>
       </div>
@@ -705,6 +823,13 @@ function EventMessage({
                     📎 {art.name}
                   </button>
                 ))}
+              </div>
+            )}
+            {/* Git commit 标记 */}
+            {isDone && (metadata?.commit as string) && (
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-[var(--text-3)]">
+                <GitBranch size={10} />
+                <span className="font-mono">{(metadata.commit as string).slice(0, 7)}</span>
               </div>
             )}
           </div>

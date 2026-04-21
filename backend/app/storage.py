@@ -17,6 +17,10 @@ Requirements
 Sequences
   next_req_seq(project_id)    -> int   (atomically increments + returns new value)
 
+Token
+  encrypt_token(plaintext)    -> str   (Fernet encrypted, base64 string)
+  decrypt_token(ciphertext)   -> str | None
+
 Backward-compat shims (used by existing router code)
   projects_store  – thin wrapper dict-like for read; use save_project/delete_project to mutate
   requirements_store – same
@@ -25,6 +29,8 @@ Backward-compat shims (used by existing router code)
 from __future__ import annotations
 
 import json
+import logging
+import os
 from typing import Any
 
 from sqlalchemy import delete, insert, select, update
@@ -41,13 +47,94 @@ from .database import (
     agents_table,
     commands_table,
     users_table,
+    workshop_sessions_table,
     row_to_project,
     row_to_requirement,
     row_to_agent,
     row_to_command,
     row_to_user,
     row_to_commander_event,
+    row_to_workshop_session,
 )
+
+
+# ── Token Encryption ─────────────────────────────────────────────────────────
+
+_fernet = None
+_TOKEN_KEY_FILE = os.path.join(os.path.dirname(__file__), "..", ".token_key")
+_logger = logging.getLogger(__name__)
+
+
+def _get_fernet():
+    global _fernet
+    if _fernet is not None:
+        return _fernet
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:
+        _logger.warning("cryptography 库未安装，Token 将以明文存储")
+        return None
+    key = os.environ.get("GIT_TOKEN_KEY")
+    if not key:
+        key_path = os.path.abspath(_TOKEN_KEY_FILE)
+        if os.path.exists(key_path):
+            key = open(key_path).read().strip()
+        else:
+            key = Fernet.generate_key().decode()
+            os.makedirs(os.path.dirname(key_path), exist_ok=True)
+            with open(key_path, "w") as f:
+                f.write(key)
+            _logger.warning(f"自动生成 Token 加密密钥，已写入 {key_path}。"
+                            f"生产环境建议通过 GIT_TOKEN_KEY 环境变量配置。")
+    _fernet = Fernet(key.encode() if isinstance(key, str) else key)
+    return _fernet
+
+
+def encrypt_token(plaintext: str) -> str:
+    """加密 Token。加密失败时返回原文（降级）。"""
+    if not plaintext:
+        return plaintext
+    f = _get_fernet()
+    if not f:
+        return plaintext
+    try:
+        return f.encrypt(plaintext.encode()).decode()
+    except Exception:
+        return plaintext
+
+
+def decrypt_token(ciphertext: str | None) -> str | None:
+    """解密 Token。解密失败返回 None（密钥已变更等）。"""
+    if not ciphertext:
+        return None
+    f = _get_fernet()
+    if not f:
+        return ciphertext  # 无加密库，假设存的是明文
+    try:
+        return f.decrypt(ciphertext.encode()).decode()
+    except Exception:
+        _logger.warning("Token 解密失败，可能密钥已变更")
+        return None
+
+
+def mask_token(token: str | None) -> str | None:
+    """脱敏显示：保留前 4 和后 4 位。"""
+    if not token:
+        return None
+    decrypted = decrypt_token(token)
+    if not decrypted:
+        return "****"
+    if len(decrypted) <= 8:
+        return "****"
+    return decrypted[:4] + "****" + decrypted[-4:]
+
+
+def token_status(encrypted_token: str | None) -> str | None:
+    """检测 Token 状态：valid / invalid / None。"""
+    if not encrypted_token:
+        return None
+    result = decrypt_token(encrypted_token)
+    return "valid" if result else "invalid"
 
 
 # ── Projects ──────────────────────────────────────────────────────────────────
@@ -135,6 +222,7 @@ def save_requirement(req_id: str, data: dict[str, Any]) -> None:
         "pipeline": json.dumps(data.get("pipeline", [])),
         "stories": json.dumps(data.get("stories", [])),
         "token_usage": json.dumps(data["tokenUsage"]) if data.get("tokenUsage") is not None else None,
+        "git_info": json.dumps(data["gitInfo"]) if data.get("gitInfo") is not None else None,
         "created_at": data.get("_created_at", 0),
     }
     with engine.begin() as conn:
@@ -377,6 +465,99 @@ def get_interview_history(req_id: str, step_id: str) -> list[dict[str, Any]]:
         if evt.get("metadata", {}).get("step_id") == step_id
         and evt["eventType"] in ("interview_question", "interview_answer")
     ]
+
+
+# ── Workshop Sessions ────────────────────────────────────────────────────────
+
+def save_workshop_session(
+    session_id: str,
+    req_id: str,
+    step_id: str,
+    phase: str,
+    **kwargs: Any,
+) -> None:
+    """Create a new workshop session."""
+    ts = int(_time.time())
+    values = {
+        "id": session_id,
+        "req_id": req_id,
+        "step_id": step_id,
+        "phase": phase,
+        "current_domain_index": kwargs.get("current_domain_index", 0),
+        "requirement_type": kwargs.get("requirement_type"),
+        "briefing_data": json.dumps(kwargs["briefing_data"], ensure_ascii=False) if kwargs.get("briefing_data") else None,
+        "domain_answers": json.dumps(kwargs.get("domain_answers", {}), ensure_ascii=False),
+        "accumulated_summary": json.dumps(kwargs.get("accumulated_summary", {}), ensure_ascii=False),
+        "prd_file_path": kwargs.get("prd_file_path"),
+        "context_file_path": kwargs.get("context_file_path"),
+        "quality_report": json.dumps(kwargs["quality_report"], ensure_ascii=False) if kwargs.get("quality_report") else None,
+        "attachment_ids": json.dumps(kwargs.get("attachment_ids", []), ensure_ascii=False),
+        "messages": json.dumps(kwargs.get("messages", []), ensure_ascii=False),
+        "created_at": ts,
+        "updated_at": ts,
+    }
+    with engine.begin() as conn:
+        conn.execute(insert(workshop_sessions_table).values(**values))
+
+
+def get_workshop_session(req_id: str, step_id: str) -> dict[str, Any] | None:
+    """Get workshop session for a requirement step. Returns None if no session exists."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(workshop_sessions_table)
+            .where(workshop_sessions_table.c.req_id == req_id)
+            .where(workshop_sessions_table.c.step_id == step_id)
+        ).fetchone()
+    if not row:
+        return None
+    return row_to_workshop_session(row)
+
+
+def get_workshop_session_by_id(session_id: str) -> dict[str, Any] | None:
+    """Get workshop session by its ID."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(workshop_sessions_table)
+            .where(workshop_sessions_table.c.id == session_id)
+        ).fetchone()
+    if not row:
+        return None
+    return row_to_workshop_session(row)
+
+
+def update_workshop_session(session_id: str, **kwargs: Any) -> None:
+    """Update workshop session fields. JSON fields are automatically serialized."""
+    ts = int(_time.time())
+    values: dict[str, Any] = {"updated_at": ts}
+
+    # 简单字段直接传递
+    for key in ("phase", "current_domain_index", "requirement_type",
+                "prd_file_path", "context_file_path"):
+        if key in kwargs:
+            values[key] = kwargs[key]
+
+    # JSON 字段需要序列化
+    for key in ("briefing_data", "domain_answers", "accumulated_summary",
+                "quality_report", "attachment_ids", "messages"):
+        if key in kwargs:
+            values[key] = json.dumps(kwargs[key], ensure_ascii=False) if kwargs[key] is not None else None
+
+    with engine.begin() as conn:
+        conn.execute(
+            update(workshop_sessions_table)
+            .where(workshop_sessions_table.c.id == session_id)
+            .values(**values)
+        )
+
+
+def delete_workshop_session(req_id: str, step_id: str) -> None:
+    """Delete workshop session (e.g., on requirement delete or restart)."""
+    with engine.begin() as conn:
+        conn.execute(
+            delete(workshop_sessions_table)
+            .where(workshop_sessions_table.c.req_id == req_id)
+            .where(workshop_sessions_table.c.step_id == step_id)
+        )
 
 
 # ── Commander State ───────────────────────────────────────────────────────────

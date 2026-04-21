@@ -263,17 +263,36 @@ def commander_start(
     step_count = len(req.get("pipeline", []))
     step_names = "、".join(s["name"] for s in req.get("pipeline", []))
 
-    save_commander_event(
-        req_id, "commander_greeting", "commander", "Commander",
-        f"需求「{req['title']}」已就绪，流水线配置了 {step_count} 个步骤（{step_names}）。准备开始工作。",
-        {"step_count": step_count},
-    )
+    # 检测第一步是否为 Workshop 模式
+    from ..storage import get_agent_by_name
+    first_pending = next((s for s in req.get("pipeline", []) if s.get("status") in ("queued", None)), None)
+    is_workshop = False
+    if first_pending:
+        agent_rec = get_agent_by_name(first_pending.get("agentName", ""))
+        pb = agent_rec.get("promptBlocks") if agent_rec else None
+        if pb and isinstance(pb, dict):
+            wc = pb.get("workshopConfig")
+            if wc and isinstance(wc, dict) and wc.get("enabled"):
+                is_workshop = True
+
+    # Workshop 模式不发射指挥官 greeting，直接进入 Lena 面板
+    if not is_workshop:
+        save_commander_event(
+            req_id, "commander_greeting", "commander", "Commander",
+            f"需求「{req['title']}」已就绪，流水线配置了 {step_count} 个步骤（{step_names}）。准备开始工作。",
+            {"step_count": step_count},
+        )
     save_commander_event(
         req_id, "user_start", "user", "",
         "开始工作",
     )
 
     req["status"] = "running"
+
+    # Workshop 模式 → 提前设置 step status，让前端即刻切换面板
+    if is_workshop and first_pending:
+        first_pending["status"] = "workshop_active"
+
     save_requirement(req_id, req)
     sync_project_status(project_id)
     background_tasks.add_task(run_commander, req_id, project_id)
@@ -288,16 +307,37 @@ def submit_user_input(
     project_id: str, req_id: str, step_id: str,
     body: UserInputBody, background_tasks: BackgroundTasks,
 ) -> dict:
-    """用户回复 Agent 的访谈问题，或跳过访谈直接执行。"""
+    """用户回复 Agent 的访谈问题，或跳过访谈直接执行。支持 Workshop 结构化输入。"""
     _ensure_project(project_id)
     req = get_requirement(req_id)
     if not req or req["projectId"] != project_id:
         raise HTTPException(404, "Requirement not found")
     step = next((s for s in req["pipeline"] if s["id"] == step_id), None)
-    if not step or step["status"] != "pending_input":
+    if not step or step["status"] not in (
+        "pending_input",
+        "workshop_briefing", "workshop_dialogue", "workshop_quality_review",
+        "workshop_active", "workshop_prd_review",
+    ):
         raise HTTPException(400, "Step is not pending user input")
 
-    if body.skip:
+    # Workshop 模式：将结构化输入序列化存储
+    is_workshop = step["status"].startswith("workshop_")
+    if is_workshop:
+        import json as _json
+        structured_input = {
+            "text": body.text,
+            "skip": body.skip,
+            "selectedOptions": body.selectedOptions,
+            "attachmentIds": body.attachmentIds,
+            "issueAction": body.issueAction,
+        }
+        save_interview_turn(req_id, step_id, "answer",
+            {"text": _json.dumps(structured_input, ensure_ascii=False)})
+        save_commander_event(req_id, "workshop_user_response",
+            "user", "",
+            body.text or "(用户操作)",
+            {"step_id": step_id, "action": "workshop_input"})
+    elif body.skip:
         save_commander_event(req_id, "user_input_response", "user", "",
             "（用户选择跳过，直接执行）", {"step_id": step_id, "action": "skip"})
     else:
@@ -313,6 +353,19 @@ def submit_user_input(
             "message": f"用户已回复。该步骤尚未执行完毕，请再次调用 invoke_agent(step_id='{step_id}') 继续执行。",
         })
     return req
+
+
+# ── Workshop 会话查询端点 ────────────────────────────────────────────────────
+
+@router.get("/{project_id}/requirements/{req_id}/workshop-session/{step_id}")
+def get_workshop_session_endpoint(project_id: str, req_id: str, step_id: str) -> dict:
+    """查询 Workshop 会话状态（前端恢复用）。"""
+    _ensure_project(project_id)
+    from ..storage import get_workshop_session
+    session = get_workshop_session(req_id, step_id)
+    if not session:
+        raise HTTPException(404, "No workshop session found")
+    return session
 
 
 # ── 中止 / 重启 / 恢复端点 ──────────────────────────────────────────────────────

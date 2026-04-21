@@ -11,6 +11,7 @@ from ..storage import (
     delete_project as _db_delete_project,
     get_all_projects, get_project, save_project,
     get_pending_suggestions, delete_pending_suggestion,
+    encrypt_token, mask_token, token_status,
 )
 from ..llm import generate_context
 
@@ -24,6 +25,23 @@ def _ensure_project(project_id: str) -> dict:
     return project
 
 
+def _sanitize_project(project: dict) -> dict:
+    """脱敏项目数据：Token 用 mask 替代，附带 tokenStatus。"""
+    p = dict(project)
+    settings = p.get("settings")
+    if settings and isinstance(settings, dict):
+        gc = settings.get("gitConfig")
+        if gc and isinstance(gc, dict):
+            encrypted = gc.get("githubToken")
+            gc = dict(gc)
+            gc["githubToken"] = mask_token(encrypted) if encrypted else None
+            gc["tokenStatus"] = token_status(encrypted)
+            settings = dict(settings)
+            settings["gitConfig"] = gc
+            p["settings"] = settings
+    return p
+
+
 @router.post("/generate-context", response_model=GenerateContextResponse)
 async def generate_context_endpoint(body: GenerateContextRequest) -> GenerateContextResponse:
     try:
@@ -35,7 +53,7 @@ async def generate_context_endpoint(body: GenerateContextRequest) -> GenerateCon
 @router.get("", response_model=list[ProjectOut])
 def list_projects() -> list[dict]:
     projects = get_all_projects()
-    return sorted(projects, key=lambda p: p.get("_created_at", 0))
+    return sorted([_sanitize_project(p) for p in projects], key=lambda p: p.get("_created_at", 0))
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
@@ -70,7 +88,7 @@ def create_project(body: ProjectCreateRequest) -> dict:
 
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project_endpoint(project_id: str) -> dict:
-    return _ensure_project(project_id)
+    return _sanitize_project(_ensure_project(project_id))
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
@@ -80,7 +98,19 @@ def patch_project(project_id: str, body: ProjectPatchRequest) -> dict:
     if "context" in patch and body.context:
         patch["context"] = body.context.model_dump()
     if "settings" in patch and body.settings:
-        patch["settings"] = body.settings.model_dump()
+        settings_data = body.settings.model_dump()
+        # 加密 GitHub Token
+        git_config = settings_data.get("gitConfig") or {}
+        new_token = git_config.get("githubToken")
+        if new_token:
+            git_config["githubToken"] = encrypt_token(new_token)
+        elif "githubToken" in git_config and not new_token:
+            # 没传新 Token，保留已有加密 Token
+            existing_settings = project.get("settings") or {}
+            existing_gc = existing_settings.get("gitConfig") or {}
+            git_config["githubToken"] = existing_gc.get("githubToken")
+        settings_data["gitConfig"] = git_config
+        patch["settings"] = settings_data
     if "ownerId" in patch:
         owner_id = patch["ownerId"]
         members = patch.get("memberIds", project["memberIds"])
@@ -88,7 +118,7 @@ def patch_project(project_id: str, body: ProjectPatchRequest) -> dict:
             patch["memberIds"] = [owner_id, *members]
     project.update(patch)
     save_project(project_id, project)
-    return project
+    return _sanitize_project(project)
 
 
 @router.delete("/{project_id}", status_code=204)

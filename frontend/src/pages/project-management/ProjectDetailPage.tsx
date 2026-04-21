@@ -3,13 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Trash2, Loader2, AlertTriangle, Pencil, Settings, FileText, X, GitBranch } from 'lucide-react'
 import { ProjectSettingsModal } from '@/components/project/ProjectSettingsModal'
 import { CommanderChatPanel } from '@/components/requirements/CommanderChatPanel'
+import { WorkshopPanel } from '@/components/requirements/WorkshopPanel'
 import { PipelineTopBar } from '@/components/requirements/PipelineTopBar'
+import { GitStatusStrip } from '@/components/requirements/GitStatusStrip'
+import { GitActionsMenu } from '@/components/requirements/GitActionsMenu'
 import { ArtifactSidebar } from '@/components/requirements/ArtifactSidebar'
 import { Badge } from '@/components/ui/Badge'
 import { LogStream } from '@/components/ui/LogStream'
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer'
 import { WorkflowConfigModal } from '@/components/requirements/WorkflowConfigModal'
-import { mockMembers } from '@/mocks/data/projects'
+import { TEAM_MEMBERS } from '@/types/project'
 import { cn } from '@/lib/utils'
 import { computeStatCounts } from '@/lib/computeStatCounts'
 import {
@@ -106,7 +109,7 @@ export function ProjectDetailPage() {
     title: '',
     summary: '',
     priority: 'P1',
-    assigneeId: project?.memberIds[0] ?? mockMembers[0]?.id ?? '',
+    assigneeId: project?.memberIds[0] ?? TEAM_MEMBERS[0]?.id ?? '',
   })
 
   useEffect(() => {
@@ -115,7 +118,7 @@ export function ProjectDetailPage() {
       if (prev.assigneeId && project.memberIds.includes(prev.assigneeId)) return prev
       return {
         ...prev,
-        assigneeId: project.memberIds[0] ?? mockMembers[0]?.id ?? '',
+        assigneeId: project.memberIds[0] ?? TEAM_MEMBERS[0]?.id ?? '',
       }
     })
   }, [project])
@@ -260,6 +263,22 @@ export function ProjectDetailPage() {
     setArtifactSidebarOpen(false)
   }, [selectedReqId])
 
+  // PR 状态轮询：open / changes_requested 时 30s 刷新
+  useEffect(() => {
+    if (!project?.id || !selectedReq?.id) return
+    const prState = selectedReq.gitInfo?.prState
+    if (!prState || prState === 'approved' || prState === 'merged' || prState === 'closed') return
+
+    let cancelled = false
+    const poll = () => {
+      if (cancelled) return
+      fetch(`/api/v1/projects/${project.id}/requirements/${selectedReq.id}/git/pr-status`)
+        .catch(() => {})
+    }
+    const timer = setInterval(poll, 30_000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [project?.id, selectedReq?.id, selectedReq?.gitInfo?.prState])
+
   if (projectLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--bg-base)]">
@@ -306,7 +325,7 @@ export function ProjectDetailPage() {
             title: '',
             summary: '',
             priority: 'P1',
-            assigneeId: project.memberIds[0] ?? mockMembers[0]?.id ?? '',
+            assigneeId: project.memberIds[0] ?? TEAM_MEMBERS[0]?.id ?? '',
           })
         },
       },
@@ -427,6 +446,7 @@ export function ProjectDetailPage() {
           open={settingsOpen}
           project={project}
           onClose={() => setSettingsOpen(false)}
+          hasRunningRequirements={requirements.some((r) => r.status === 'running')}
         />
       )}
 
@@ -600,6 +620,12 @@ export function ProjectDetailPage() {
                           >
                             <Trash2 size={12} />
                           </button>
+                          <GitActionsMenu
+                            projectId={project.id}
+                            reqId={selectedReq.id}
+                            gitInfo={selectedReq.gitInfo}
+                            hasRepository={!!project.settings?.repository}
+                          />
                         </div>
                       </div>
                   </div>
@@ -611,24 +637,47 @@ export function ProjectDetailPage() {
                     onStepClick={(step) => setActiveNode(activeNode?.id === step.id ? null : step)}
                   />
 
+                  {/* Git status strip */}
+                  <div className="px-4 py-1">
+                    <GitStatusStrip
+                      gitInfo={selectedReq.gitInfo}
+                      hasRepository={!!project.settings?.repository}
+                    />
+                  </div>
+
                   {/* Chat area + artifact sidebar */}
                   <div className="relative min-h-0 flex-1 overflow-hidden">
-                    <CommanderChatPanel
-                      projectId={project.id}
-                      requirement={selectedReq}
-                      onApproveStep={handleApproveStep}
-                      onDismissAdvisory={(step) => {
-                        setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
-                        setDismissModalStep(step)
-                      }}
-                      onViewArtifact={(stepId, art) => {
-                        const step = selectedReq.pipeline.find((s) => s.id === stepId)
-                        if (step) {
-                          setViewingArtifact({ step, art: { name: art.name, type: art.type as StepArtifact['type'], summary: art.summary } })
-                        }
-                      }}
-                      isApproving={approveStepMutation.isPending}
-                    />
+                    {selectedReq.pipeline.some(s =>
+                      typeof s.status === 'string' && s.status.startsWith('workshop_')
+                    ) ? (
+                      <WorkshopPanel
+                        projectId={project.id}
+                        requirement={selectedReq}
+                        onViewArtifact={(stepId, art) => {
+                          const step = selectedReq.pipeline.find((s) => s.id === stepId)
+                          if (step) {
+                            setViewingArtifact({ step, art: { name: art.name, type: art.type as StepArtifact['type'], summary: art.summary } })
+                          }
+                        }}
+                      />
+                    ) : (
+                      <CommanderChatPanel
+                        projectId={project.id}
+                        requirement={selectedReq}
+                        onApproveStep={handleApproveStep}
+                        onDismissAdvisory={(step) => {
+                          setDismissForm({ lessonTitle: '', correctApproach: '', background: '', promoteToRule: false })
+                          setDismissModalStep(step)
+                        }}
+                        onViewArtifact={(stepId, art) => {
+                          const step = selectedReq.pipeline.find((s) => s.id === stepId)
+                          if (step) {
+                            setViewingArtifact({ step, art: { name: art.name, type: art.type as StepArtifact['type'], summary: art.summary } })
+                          }
+                        }}
+                        isApproving={approveStepMutation.isPending}
+                      />
+                    )}
                     <ArtifactSidebar
                       open={artifactSidebarOpen}
                       onToggle={() => setArtifactSidebarOpen((prev) => !prev)}
@@ -895,7 +944,7 @@ export function ProjectDetailPage() {
                     className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 text-sm text-[var(--text-1)]"
                   >
                     {project.memberIds.map((memberId) => {
-                      const m = mockMembers.find((x) => x.id === memberId)
+                      const m = TEAM_MEMBERS.find((x) => x.id === memberId)
                       return (
                         <option key={memberId} value={memberId}>
                           {m?.name ?? memberId}
@@ -983,7 +1032,7 @@ export function ProjectDetailPage() {
                     className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 text-sm text-[var(--text-1)]"
                   >
                     {project.memberIds.map((mid) => {
-                      const m = mockMembers.find((x) => x.id === mid)
+                      const m = TEAM_MEMBERS.find((x) => x.id === mid)
                       return <option key={mid} value={mid}>{m?.name ?? mid}</option>
                     })}
                   </select>
@@ -1294,7 +1343,7 @@ function statusBadge(status: RequirementStatus): 'blue' | 'orange' | 'gray' | 'g
 }
 
 function memberName(memberId: string) {
-  return mockMembers.find((m) => m.id === memberId)?.name ?? memberId
+  return TEAM_MEMBERS.find((m) => m.id === memberId)?.name ?? memberId
 }
 
 function StatChip({ label, value, color }: { label: string; value: number; color: string }) {

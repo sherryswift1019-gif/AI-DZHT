@@ -20,6 +20,7 @@ from .routers.requirements import router as requirements_router
 from .routers.llm_config import router as llm_config_router
 from .routers.agents import router as agents_router
 from .routers.users import router as users_router
+from .routers.git import router as git_router
 
 load_dotenv()
 
@@ -44,6 +45,7 @@ app.include_router(requirements_router)
 app.include_router(llm_config_router)
 app.include_router(agents_router)
 app.include_router(users_router)
+app.include_router(git_router)
 
 
 @app.get("/health")

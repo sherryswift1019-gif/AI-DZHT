@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/ui/AgentAvatar'
-import { bmadAgentDefs } from '@/mocks/data/bmadAgentDefs'
+import { AGENT_DEFS } from '@/types/agent'
 import type { Agent, AgentStatus, AgentSource, AgentRole } from '@/types/agent'
 
 interface AgentCardProps {
@@ -83,7 +83,7 @@ function SourceTag({ source }: { source: AgentSource }) {
 // ─── AgentCard ────────────────────────────────────────────────────────
 
 export function AgentCard({ agent, onClick }: AgentCardProps) {
-  const def = bmadAgentDefs.find(d => d.id === agent.role)
+  const def = AGENT_DEFS.find(d => d.id === agent.role)
   const personaTitle = def?.personaTitle ?? '自定义 Agent'
   const phaseLabel   = roleToPhaseLabel[agent.role]
   const accentColor  = roleToPhaseColor[agent.role]

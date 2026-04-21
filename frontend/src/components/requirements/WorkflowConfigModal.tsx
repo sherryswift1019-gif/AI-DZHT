@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useScrollLock } from '@/hooks/useScrollLock'
-import { X, ChevronDown, ChevronRight, Copy, Check, AlertCircle, Loader2, Sparkles } from 'lucide-react'
+import { X, ChevronDown, ChevronRight, Check, AlertCircle, Loader2, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { buildWorkflowSuggestPrompt } from '@/lib/buildWorkflowPrompt'
 import { useWorkflowSuggest } from '@/hooks/useWorkflowSuggest'
 import type { PipelineStep, ProjectContext, ReviewPolicy } from '@/types/project'
 import { DEFAULT_REVIEW_POLICY } from '@/types/project'
 import type { AgentRole } from '@/types/agent'
+import { useAgentList } from '@/hooks/useAgents'
 
 // ── 每个 Agent 角色的元信息（与 FlowNode / getStepDetail 保持一致）────
 const ROLE_META: Record<AgentRole, { personaName: string; personaTitle: string }> = {
@@ -129,7 +129,7 @@ const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     id: 'requirements',
     icon: '📝',
     label: '需求驱动',
-    desc: '从研究到 PRD 一气呵成→评审→UX→架构→策略→开发→测试→门禁',
+    desc: 'Lena Workshop 智能采集→评审→UX→架构→策略→开发→测试→门禁',
     steps: [
       { name: '需求研究与规划', agentRole: 'reqLead'   },
       { name: '可测试性评审',   agentRole: 'qa'        },
@@ -188,8 +188,6 @@ interface WorkflowConfigModalProps {
   onConfirm: (pipeline: PipelineStep[]) => void
 }
 
-type CopyState = 'idle' | 'copied' | 'error'
-
 export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext, onClose, onConfirm }: WorkflowConfigModalProps) {
   const [activeTemplateId, setActiveTemplateId] = useState<WorkflowTemplate['id']>('full')
   const [steps, setSteps] = useState<StepState[]>(() =>
@@ -197,46 +195,43 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
   )
   const [expandedStep, setExpandedStep] = useState<number | null>(null)
   const [aiPanelOpen, setAiPanelOpen] = useState(true)
-  const [copyState, setCopyState] = useState<CopyState>('idle')
   const [aiApplied, setAiApplied] = useState(false)
 
-  const { mutate: fetchSuggest, data: suggestion, isPending: isSuggesting, isError: isSuggestError } = useWorkflowSuggest()
+  const { mutate: fetchSuggest, data: suggestion, isPending: isSuggesting, isError: isSuggestError, reset: resetSuggest } = useWorkflowSuggest()
+
+  // Workshop 模式检测：从后端 Agent 数据中提取启用了 Workshop 的角色
+  const { data: agents } = useAgentList()
+  const workshopRoles = new Set<AgentRole>(
+    (agents ?? [])
+      .filter(a => a.promptBlocks?.workshopConfig?.enabled)
+      .map(a => a.role)
+  )
 
   useScrollLock(open)
 
-  // 打开时自动触发 AI 分析
+  // 打开时重置 AI 建议状态
   useEffect(() => {
     if (!open) return
     setAiApplied(false)
-    fetchSuggest({ projectContext, reqTitle, reqSummary })
+    resetSuggest()
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 收到建议后自动切换到推荐模板（只切换一次）
-  useEffect(() => {
-    if (!suggestion || aiApplied) return
+  // 用户主动触发 AI 分析
+  const handleAiSuggest = () => {
+    fetchSuggest({ projectContext, reqTitle, reqSummary })
+  }
+
+  // 用户主动应用推荐模板
+  const handleApplySuggestion = () => {
+    if (!suggestion) return
     const tpl = WORKFLOW_TEMPLATES.find((t) => t.id === suggestion.recommendedTemplateId)
     if (tpl) {
       selectTemplate(tpl)
       setAiApplied(true)
     }
-  }, [suggestion]) // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
   if (!open) return null
-
-  const prompt = buildWorkflowSuggestPrompt(reqTitle, reqSummary, projectContext)
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(prompt).then(
-      () => {
-        setCopyState('copied')
-        setTimeout(() => setCopyState('idle'), 1500)
-      },
-      () => {
-        setCopyState('error')
-        setTimeout(() => setCopyState('idle'), 3000)
-      },
-    )
-  }
 
   const enabledCount = steps.filter((s) => s.enabled).length
 
@@ -296,18 +291,19 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
       .filter((s) => s.enabled)
       .map((s, i) => {
         const meta = ROLE_META[s.agentRole]
+        const isWorkshop = workshopRoles.has(s.agentRole)
         return {
           id: `new-${ts}-${i + 1}`,
           name: s.name,
           agentName: meta.personaName,
           role: meta.personaTitle,
-          commands: s.enabledCommands.join(' → '),
+          commands: isWorkshop ? '' : s.enabledCommands.join(' → '),
           status: 'queued' as const,
           updatedAt: '--:--',
           agentRole: s.agentRole,
-          enabledCommands: s.enabledCommands,
+          enabledCommands: isWorkshop ? [] : s.enabledCommands,
           requiresApproval: s.requiresApproval,
-          reviewPolicy: s.reviewPolicy,
+          reviewPolicy: isWorkshop ? undefined : s.reviewPolicy,
         }
       })
     onConfirm(pipeline)
@@ -343,14 +339,8 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
             className="flex w-full items-center justify-between px-5 py-2.5 text-left hover:bg-[var(--bg-hover)]"
           >
             <div className="flex items-center gap-2">
-              {isSuggesting
-                ? <Loader2 size={12} className="animate-spin text-[var(--accent)]" />
-                : <Sparkles size={12} className={cn(suggestion ? 'text-[var(--accent)]' : 'text-[var(--text-3)]')} />
-              }
+              <Sparkles size={12} className={cn(suggestion ? 'text-[var(--accent)]' : 'text-[var(--text-3)]')} />
               <span className="text-[11px] font-semibold text-[var(--text-2)]">AI 分析建议</span>
-              {isSuggesting && (
-                <span className="text-[10px] text-[var(--text-3)]">分析中...</span>
-              )}
               {suggestion && !isSuggesting && (
                 <span className={cn(
                   'rounded-full px-1.5 py-0.5 text-[9px] font-semibold',
@@ -363,8 +353,10 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
                   {suggestion.confidence === 'high' ? '高置信' : suggestion.confidence === 'medium' ? '中置信' : '低置信'}
                 </span>
               )}
-              {isSuggestError && (
-                <span className="text-[10px] text-[var(--danger)]">分析失败，已保持默认模板</span>
+              {aiApplied && (
+                <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold bg-[var(--success-sub)] text-[var(--success)]">
+                  已应用
+                </span>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -378,48 +370,76 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
           {/* 展开内容 */}
           {aiPanelOpen && (
             <div className="px-5 pb-3 space-y-2">
-              {/* AI 推荐结果 */}
-              {suggestion && !isSuggesting && (
-                <div className="rounded-xl border border-[rgba(10,132,255,0.25)] bg-[var(--accent-sub)] px-4 py-2.5">
-                  <p className="text-[11px] leading-relaxed text-[var(--text-1)]">{suggestion.reasoning}</p>
-                  {suggestion.warnings.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {suggestion.warnings.map((w, i) => (
-                        <p key={i} className="flex items-start gap-1.5 text-[10px] text-[var(--warning)]">
-                          <AlertCircle size={10} className="mt-0.5 shrink-0" />{w}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+              {/* 未请求 AI 分析时：展示触发按钮 */}
+              {!suggestion && !isSuggesting && !isSuggestError && (
+                <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] px-4 py-3">
+                  <div className="flex-1">
+                    <p className="text-[11px] font-medium text-[var(--text-1)]">让 AI 根据需求内容推荐最佳工作流模板</p>
+                    <p className="mt-0.5 text-[10px] text-[var(--text-3)]">AI 将分析需求特征，推荐合适的 Agent 编排方案</p>
+                  </div>
+                  <button
+                    onClick={handleAiSuggest}
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[11px] font-semibold text-white transition-all hover:opacity-90"
+                  >
+                    <Sparkles size={12} />
+                    AI 智能推荐
+                  </button>
                 </div>
               )}
 
-              {/* Prompt 复制区 */}
-              <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-base)]">
-                <pre className="max-h-[100px] overflow-y-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-[10px] leading-relaxed text-[var(--text-3)]">
-                  {prompt}
-                </pre>
-                <button
-                  onClick={handleCopy}
-                  className={cn(
-                    'absolute right-2 top-2 flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-semibold transition-all',
-                    copyState === 'copied'
-                      ? 'border-[rgba(52,199,89,0.4)] bg-[var(--success-sub)] text-[var(--success)]'
-                      : copyState === 'error'
-                        ? 'border-[rgba(255,59,48,0.3)] bg-[var(--danger-sub)] text-[var(--danger)]'
-                        : 'border-[var(--border)] bg-[var(--bg-panel)] text-[var(--text-2)] hover:border-[var(--accent)] hover:text-[var(--accent)]',
-                  )}
-                >
-                  {copyState === 'copied' && <Check size={10} />}
-                  {copyState === 'error' && <AlertCircle size={10} />}
-                  {copyState === 'idle' && <Copy size={10} />}
-                  {copyState === 'copied'
-                    ? '已复制 ✓'
-                    : copyState === 'error'
-                      ? '复制失败，请手动复制'
-                      : '复制 Prompt'}
-                </button>
-              </div>
+              {/* 分析中 */}
+              {isSuggesting && (
+                <div className="flex items-center gap-2 rounded-xl border border-[rgba(10,132,255,0.25)] bg-[var(--accent-sub)] px-4 py-3">
+                  <Loader2 size={14} className="animate-spin text-[var(--accent)]" />
+                  <span className="text-[11px] text-[var(--text-2)]">正在分析需求特征，推荐最佳工作流...</span>
+                </div>
+              )}
+
+              {/* 分析失败 */}
+              {isSuggestError && !isSuggesting && (
+                <div className="flex items-center justify-between rounded-xl border border-[rgba(255,59,48,0.25)] bg-[var(--danger-sub)] px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={12} className="text-[var(--danger)]" />
+                    <span className="text-[11px] text-[var(--danger)]">AI 分析失败，请手动选择模板或重试</span>
+                  </div>
+                  <button
+                    onClick={handleAiSuggest}
+                    className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--text-2)] hover:text-[var(--text-1)]"
+                  >
+                    重试
+                  </button>
+                </div>
+              )}
+
+              {/* AI 推荐结果 */}
+              {suggestion && !isSuggesting && (
+                <div className="rounded-xl border border-[rgba(10,132,255,0.25)] bg-[var(--accent-sub)] px-4 py-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="text-[11px] leading-relaxed text-[var(--text-1)]">{suggestion.reasoning}</p>
+                      {suggestion.warnings.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {suggestion.warnings.map((w, i) => (
+                            <p key={i} className="flex items-start gap-1.5 text-[10px] text-[var(--warning)]">
+                              <AlertCircle size={10} className="mt-0.5 shrink-0" />{w}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {!aiApplied && (
+                      <button
+                        onClick={handleApplySuggestion}
+                        className="flex shrink-0 items-center gap-1 rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-[10px] font-semibold text-white transition-all hover:opacity-90"
+                      >
+                        <Check size={10} />
+                        应用推荐
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
         </div>
@@ -545,18 +565,25 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
                             </button>
                           )}
 
-                          {/* 命令链预览（与 FlowNode commands 字段对应）*/}
-                          {step.enabled && cmds.length > 0 && (
+                          {/* 命令链预览（仅非 Workshop Agent）*/}
+                          {step.enabled && !workshopRoles.has(step.agentRole) && cmds.length > 0 && (
                             <span className="mt-2 font-mono text-[9px] leading-snug text-[#58a6ff] opacity-80">
                               {step.enabledCommands.slice(0, 3).join(' → ')}
                               {step.enabledCommands.length > 3 && ' …'}
                             </span>
                           )}
 
-                          {/* 命令数量指示 */}
-                          {step.enabled && cmds.length > 0 && (
+                          {/* 命令数量指示（仅非 Workshop Agent）*/}
+                          {step.enabled && !workshopRoles.has(step.agentRole) && cmds.length > 0 && (
                             <span className="mt-1 text-[9px] text-[var(--text-3)]">
                               {step.enabledCommands.length}/{cmds.length} 命令
+                            </span>
+                          )}
+
+                          {/* Workshop 模式 badge */}
+                          {step.enabled && workshopRoles.has(step.agentRole) && (
+                            <span className="mt-2 self-start rounded border px-1.5 py-0.5 text-[9px] font-semibold leading-none border-[rgba(94,234,212,0.4)] bg-[rgba(94,234,212,0.1)] text-teal-400">
+                              Workshop 模式
                             </span>
                           )}
                         </div>
@@ -575,11 +602,45 @@ export function WorkflowConfigModal({ open, reqTitle, reqSummary, projectContext
               </div>
             </div>
 
-            {/* ── 命令能力配置面板（选中节点时展示）── */}
+            {/* ── 配置面板（选中节点时展示）── */}
             {expandedStep !== null && steps[expandedStep]?.enabled && (() => {
               const step = steps[expandedStep]
               const cmds = AGENT_COMMANDS[step.agentRole] ?? []
               const meta = ROLE_META[step.agentRole]
+              const isWorkshop = workshopRoles.has(step.agentRole)
+
+              // Workshop Agent → 展示说明卡
+              if (isWorkshop) {
+                return (
+                  <div className="rounded-xl border border-[rgba(94,234,212,0.25)] bg-[rgba(94,234,212,0.04)] p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-[11px] font-semibold text-[var(--text-1)]">
+                        {meta.personaName} ({meta.personaTitle}) — Workshop 模式
+                      </p>
+                      <button
+                        onClick={() => setExpandedStep(null)}
+                        className="rounded border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-3)] hover:text-[var(--text-1)]"
+                      >
+                        收起
+                      </button>
+                    </div>
+                    <div className="space-y-2 text-[11px] text-[var(--text-2)] leading-relaxed">
+                      <p>{meta.personaName} 使用 Workshop 模式工作，执行时将自动进行：</p>
+                      <ol className="list-decimal pl-4 space-y-1 text-[var(--text-3)]">
+                        <li>情境摘要 — 展示已掌握的信息，确认理解</li>
+                        <li>分领域对话 — 逐领域深入采集需求信息</li>
+                        <li>全文生成 — 按模板生成文档并自动质检</li>
+                        <li>质量报告 — 出示评分卡，处理待解决项</li>
+                      </ol>
+                      <p className="text-[10px] text-[var(--text-3)] mt-2">
+                        命令能力和审查策略由 Workshop 引擎自动管理，无需手动配置。
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+
+              // 非 Workshop Agent → 原有命令能力配置
               if (cmds.length === 0) return null
               return (
                 <div className="rounded-xl border border-[rgba(88,166,255,0.25)] bg-[rgba(88,166,255,0.04)] p-4">

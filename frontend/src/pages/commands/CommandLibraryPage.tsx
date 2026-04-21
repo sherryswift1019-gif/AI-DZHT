@@ -5,8 +5,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
-import { useCommandList } from '@/hooks/useAgents'
-import { bmadAgentDefs } from '@/mocks/data/bmadAgentDefs'
+import { useCommandList, useAgentList } from '@/hooks/useAgents'
 import type { Command, CommandPhase } from '@/types/agent'
 
 const PHASE_LABELS: Record<CommandPhase, string> = {
@@ -35,6 +34,7 @@ function findCmdName(commands: Command[], code: string): string {
 
 export function CommandLibraryPage() {
   const { data: apiCommands = [], isLoading } = useCommandList()
+  const { data: agents = [] } = useAgentList()
   const [commands, setCommands] = useState<Command[]>([])
   const [keyword, setKeyword] = useState('')
 
@@ -79,7 +79,15 @@ export function CommandLibraryPage() {
     setCommands((prev) => prev.map((c) => (c.id === id ? { ...c, isEnabled: !c.isEnabled } : c)))
 
   const total = commands.length
-  const customCount = commands.filter((c) => !c.isProtected).length
+  // 收集所有已分配给内置 agent 的命令 code
+  const assignedCodesTop = useMemo(() => {
+    const codes = new Set<string>()
+    agents.filter((a) => a.source === 'builtin').forEach((a) =>
+      a.commands.forEach((c) => codes.add(c.code))
+    )
+    return codes
+  }, [agents])
+  const customCount = commands.filter((c) => !c.isProtected && !assignedCodesTop.has(c.code)).length
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -195,6 +203,7 @@ function AgentView({
   onToggle: (id: string) => void
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const { data: agents = [] } = useAgentList()
 
   const toggle = (id: string) =>
     setCollapsed((prev) => {
@@ -203,25 +212,34 @@ function AgentView({
       return next
     })
 
-  // 每个 agent section 的命令
-  const agentSections = bmadAgentDefs.map((agent) => ({
-    agent,
-    cmds: agent.commandCodes
-      .map((code) => commands.find((c) => c.code === code))
-      .filter(Boolean) as Command[],
-  }))
+  // 从真实 API 构建 agent sections（仅内置 agent）
+  const agentSections = agents
+    .filter((a) => a.source === 'builtin')
+    .map((agent) => ({
+      agent,
+      cmds: agent.commands.filter((c) => commands.some((cmd) => cmd.id === c.id)),
+    }))
 
-  // 自定义命令（isProtected: false）
-  const customCmds = commands.filter((c) => !c.isProtected)
+  // 收集所有已分配给 agent 的命令 code
+  const assignedCodes = new Set(
+    agentSections.flatMap(({ cmds }) => cmds.map((c) => c.code))
+  )
+
+  // 自定义命令：isProtected: false 且不在任何 agent section 中
+  const customCmds = commands.filter((c) => !c.isProtected && !assignedCodes.has(c.code))
+
+  const PHASE_TO_BADGE = {
+    analysis: 'blue', planning: 'purple', architecture: 'orange',
+    implementation: 'green', qa: 'green', utility: 'gray',
+  } as const
 
   return (
     <div className="flex flex-col gap-3">
       {agentSections.map(({ agent, cmds }) => {
         const isCollapsed = collapsed.has(agent.id)
-        const phaseBadgeVariant = ({
-          analysis: 'blue', planning: 'purple', architecture: 'orange',
-          implementation: 'green', utility: 'gray',
-        } as const)[agent.phase] ?? 'gray'
+        // 取 agent 的第一个命令的 phase 作为 badge
+        const agentPhase = cmds[0]?.phase ?? 'implementation'
+        const phaseBadgeVariant = PHASE_TO_BADGE[agentPhase] ?? 'gray'
 
         return (
           <div key={agent.id} className="rounded-2xl bg-[var(--bg-panel)] border border-[var(--border)] overflow-hidden">
@@ -231,17 +249,16 @@ function AgentView({
               className="w-full flex items-center justify-between px-5 py-4 hover:bg-[var(--bg-hover)] transition-colors text-left"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <span className="text-2xl flex-shrink-0">{agent.avatar}</span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-[var(--text-1)]">{agent.personaName}</span>
+                    <span className="text-sm font-bold text-[var(--text-1)]">{agent.name}</span>
                     <span className="text-[var(--border-strong)]">·</span>
-                    <span className="text-sm text-[var(--text-2)]">{agent.personaTitle}</span>
+                    <span className="text-sm text-[var(--text-2)]">{agent.description}</span>
                     <Badge variant={phaseBadgeVariant} className="text-[10px]">
-                      {PHASE_LABELS[agent.phase]}
+                      {PHASE_LABELS[agentPhase]}
                     </Badge>
                   </div>
-                  <p className="text-xs font-mono text-[var(--text-3)] mt-0.5">{agent.skillName}</p>
+                  <p className="text-xs font-mono text-[var(--text-3)] mt-0.5">{agent.role} · {agent.version}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 ml-4">

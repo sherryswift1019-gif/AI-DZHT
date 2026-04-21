@@ -14,6 +14,13 @@ export type PipelineStepStatus =
   | 'pending_approval'          // 强制审批：必须人工批准后继续
   | 'pending_advisory_approval' // 指挥官建议审批：可批准或标记"无需审批"
   | 'pending_input'             // 等待用户输入（对话式访谈）
+  | 'workshop_active'           // Workshop：对话进行中
+  | 'workshop_prd_review'       // Workshop：PRD 审阅中
+  | 'workshop_generating'       // Workshop：AI 自主生成中
+  // 兼容旧状态
+  | 'workshop_briefing'
+  | 'workshop_dialogue'
+  | 'workshop_quality_review'
 
 export type RuleScope = 'all' | 'dev' | 'qa' | 'pm' | 'design' | 'architect'
 
@@ -23,6 +30,13 @@ export interface TeamMember {
   role: string
   avatar: string
 }
+
+export const TEAM_MEMBERS: TeamMember[] = [
+  { id: 'u1', name: 'Alice', role: '项目负责人', avatar: 'AL' },
+  { id: 'u2', name: 'Bob', role: '开发工程师', avatar: 'BO' },
+  { id: 'u3', name: 'Carol', role: '测试工程师', avatar: 'CA' },
+  { id: 'u4', name: 'David', role: '产品经理', avatar: 'DA' },
+]
 
 export interface TechItem {
   name: string
@@ -75,8 +89,18 @@ export interface EnvLink {
   url: string
 }
 
+export interface GitConfig {
+  defaultBranch: string
+  branchPrefix: string
+  githubToken?: string
+  autoCreatePR: boolean
+  autoReview: boolean
+  prTemplate?: string
+}
+
 export interface ProjectSettings {
   repository?: string
+  gitConfig?: GitConfig
   environments: EnvLink[]
   context: ProjectContext
 }
@@ -138,6 +162,24 @@ export interface Story {
   pipeline: PipelineStep[]
 }
 
+export type RequirementGitPrState =
+  | 'open'
+  | 'changes_requested'
+  | 'approved'
+  | 'merged'
+  | 'closed'
+
+export interface RequirementGitInfo {
+  branch?: string
+  prUrl?: string
+  prNumber?: number
+  prState?: RequirementGitPrState
+  commitCount: number
+  additions: number
+  deletions: number
+  lastCommitHash?: string
+}
+
 export interface Requirement {
   id: string
   projectId: string
@@ -150,6 +192,7 @@ export interface Requirement {
   pipeline: PipelineStep[]
   stories: Story[]
   tokenUsage?: number
+  gitInfo?: RequirementGitInfo
 }
 
 // ── Step Detail API ─────────────────────────────────────────────────────────
@@ -284,6 +327,22 @@ export type CommanderEventType =
   | 'pipeline_resumed'
   | 'step_paused'
   | 'step_continued'
+  | 'git_error'
+  | 'git_pr_created'
+  | 'git_pr_linked'
+  | 'git_review_started'
+  | 'git_review_done'
+  // Workshop 事件
+  | 'workshop_briefing'           // 阶段 1：情境摘要
+  | 'workshop_briefing_response'  // 用户确认/修正情境
+  | 'workshop_domain_question'    // 阶段 2：领域提问
+  | 'workshop_domain_response'    // 用户回答领域问题
+  | 'workshop_domain_confirm'     // Lena 确认理解
+  | 'workshop_domain_confirm_ack' // 用户确认理解正确
+  | 'workshop_generating'         // 阶段 3：生成中进度
+  | 'workshop_quality_report'     // 阶段 4：质量报告
+  | 'workshop_issue_resolve'      // 待处理项逐项处理
+  | 'workshop_final_delivery'     // 最终交付
 
 export type CommanderEventRole = 'commander' | 'agent' | 'user' | 'system'
 
@@ -297,4 +356,55 @@ export interface CommanderEvent {
   content: string
   metadata: Record<string, unknown>
   createdAt: number
+}
+
+// ── Workshop 类型 ──────────────────────────────────────────────────────────
+
+export type WorkshopPhase = 'briefing_pending' | 'dialogue' | 'generating' | 'quality_review' | 'done' | 'abandoned'
+export type RequirementType = 'feature' | 'new_product' | 'tech_refactor'
+export interface WorkshopProgress {
+  currentDomain: number               // 当前第几个领域（从 0 开始）
+  totalDomains: number
+  currentDomainName: string
+  completedDomains: string[]
+  skippedDomains: string[]
+  phase: WorkshopPhase
+}
+
+export interface QualityDimension {
+  score: number
+  details: string[]
+}
+
+export interface QualityFinding {
+  ruleId: number
+  severity: 'blocking' | 'warning'
+  category?: string
+  title: string
+  description: string
+  impact?: string
+  suggestion: string
+  affectedSections: string[]
+}
+
+export interface WorkshopQualityPayload {
+  totalScore: number
+  dimensions: Record<string, QualityDimension>
+  findings: QualityFinding[]
+  hasBlockingIssues: boolean
+  artifactName?: string
+}
+
+export interface WorkshopSessionState {
+  id: string
+  reqId: string
+  stepId: string
+  phase: WorkshopPhase
+  currentDomainIndex: number
+  requirementType?: RequirementType
+  briefingData?: { markdown: string; requirementType: string }
+  accumulatedSummary?: Record<string, string>
+  qualityReport?: WorkshopQualityPayload
+  createdAt: number
+  updatedAt: number
 }

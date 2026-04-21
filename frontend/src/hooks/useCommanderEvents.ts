@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { CommanderEvent, Requirement } from '@/types/project'
+import type { CommanderEvent, Requirement, WorkshopSessionState } from '@/types/project'
 
 const BASE = '/api/v1/projects'
 
@@ -44,7 +44,11 @@ export function useCommanderEvents(projectId: string, requirement: Requirement |
       const hasPending = requirement.pipeline.some(
         (step) => step.status === 'pending_approval'
           || step.status === 'pending_advisory_approval'
-          || step.status === 'pending_input',
+          || step.status === 'pending_input'
+          || step.status === 'workshop_briefing'
+          || step.status === 'workshop_dialogue'
+          || step.status === 'workshop_generating'
+          || step.status === 'workshop_quality_review',
       )
       if (hasPending) return 3000
       // done 状态只拉取一次
@@ -99,14 +103,21 @@ export function useCommanderStart() {
 export function useSubmitUserInput() {
   const qc = useQueryClient()
   return useMutation<Requirement, Error,
-    { projectId: string; reqId: string; stepId: string; text: string; skip?: boolean }>({
-    mutationFn: async ({ projectId, reqId, stepId, text, skip }) => {
+    { projectId: string; reqId: string; stepId: string; text: string; skip?: boolean;
+      selectedOptions?: string[]; attachmentIds?: string[]; issueAction?: string }>({
+    mutationFn: async ({ projectId, reqId, stepId, text, skip, selectedOptions, attachmentIds, issueAction }) => {
       const res = await fetch(
         `${BASE}/${projectId}/requirements/${reqId}/user-input/${stepId}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, skip: skip ?? false }),
+          body: JSON.stringify({
+            text,
+            skip: skip ?? false,
+            ...(selectedOptions && { selectedOptions }),
+            ...(attachmentIds && { attachmentIds }),
+            ...(issueAction && { issueAction }),
+          }),
         },
       )
       if (!res.ok) throw new Error(`Failed to submit input (${res.status})`)
@@ -186,6 +197,60 @@ export function useContinueStep() {
     },
     onSuccess: (_, vars) => {
       void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+    },
+  })
+}
+
+// ── Workshop 会话状态查询（用于前端恢复） ────────────────────────────────────────
+
+export function useWorkshopSession(
+  projectId: string,
+  reqId: string,
+  stepId: string | undefined,
+  enabled: boolean = true,
+) {
+  return useQuery<WorkshopSessionState | null>({
+    queryKey: ['workshop-session', projectId, reqId, stepId],
+    queryFn: async () => {
+      if (!stepId) return null
+      const res = await fetch(
+        `${BASE}/${projectId}/requirements/${reqId}/workshop-session/${stepId}`,
+      )
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`Failed to fetch workshop session (${res.status})`)
+      return res.json() as Promise<WorkshopSessionState>
+    },
+    enabled: !!projectId && !!reqId && !!stepId && enabled,
+    staleTime: 10_000,
+  })
+}
+
+// ── Workshop 待处理项处理 ────────────────────────────────────────────────────────
+
+export function useResolveWorkshopIssue() {
+  const qc = useQueryClient()
+  return useMutation<Requirement, Error,
+    { projectId: string; reqId: string; stepId: string;
+      issueId: string; action: string; detail?: string }>({
+    mutationFn: async ({ projectId, reqId, stepId, issueId, action, detail }) => {
+      const res = await fetch(
+        `${BASE}/${projectId}/requirements/${reqId}/user-input/${stepId}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: detail ?? '',
+            issueAction: action,
+            selectedOptions: [issueId],
+          }),
+        },
+      )
+      if (!res.ok) throw new Error(`Failed to resolve issue (${res.status})`)
+      return res.json() as Promise<Requirement>
+    },
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: ['requirements', vars.projectId] })
+      void qc.invalidateQueries({ queryKey: ['workshop-session', vars.projectId, vars.reqId] })
     },
   })
 }

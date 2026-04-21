@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, X, Sparkles, ChevronDown, Pencil } from 'lucide-react'
+import { Plus, Trash2, X, Sparkles, ChevronDown, Pencil, ExternalLink, Loader2, CheckCircle2, AlertTriangle, GitBranch, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useScrollLock } from '@/hooks/useScrollLock'
-import { mockMembers } from '@/mocks/data/projects'
-import type { ContextLesson, EnvLink, Project, ProjectContext, ProjectSettings, ProjectStatus } from '@/types/project'
+import { TEAM_MEMBERS } from '@/types/project'
+import type { ContextLesson, EnvLink, GitConfig, Project, ProjectContext, ProjectSettings, ProjectStatus } from '@/types/project'
 import { usePatchProject } from '@/hooks/useProjects'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -63,11 +63,12 @@ interface Props {
   open: boolean
   project: Project
   onClose: () => void
+  hasRunningRequirements?: boolean
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function ProjectSettingsModal({ open, project, onClose }: Props) {
+export function ProjectSettingsModal({ open, project, onClose, hasRunningRequirements = false }: Props) {
   const patchMutation = usePatchProject()
   const [activeTab, setActiveTab] = useState<Tab>('basic')
 
@@ -81,6 +82,20 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
   const [envLinks, setEnvLinks] = useState<EnvLink[]>(
     project.settings?.environments ?? [],
   )
+
+  // Git config state
+  const existingGitConfig = project.settings?.gitConfig
+  const [githubToken, setGithubToken] = useState('')  // 不回显 Token，只显示脱敏
+  const [showToken, setShowToken] = useState(false)
+  const [autoCreatePR, setAutoCreatePR] = useState(existingGitConfig?.autoCreatePR ?? false)
+  const [autoReview, setAutoReview] = useState(existingGitConfig?.autoReview ?? false)
+  const [defaultBranch, setDefaultBranch] = useState(existingGitConfig?.defaultBranch ?? 'main')
+  const [branchPrefix, setBranchPrefix] = useState(existingGitConfig?.branchPrefix ?? 'req/')
+  const [showAdvancedGit, setShowAdvancedGit] = useState(false)
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionResult, setConnectionResult] = useState<{
+    ok: boolean; error?: string; login?: string; defaultBranch?: string; permissions?: Record<string, boolean>
+  } | null>(null)
 
   // Context state
   const [context, setContext] = useState<ProjectContext>(
@@ -129,6 +144,14 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
     setLessons(ctx.lessons ?? [])
     setAddingLesson(false)
     setEditingLessonId(null)
+    // Git config reset
+    const gc = project.settings?.gitConfig
+    setGithubToken('')
+    setAutoCreatePR(gc?.autoCreatePR ?? false)
+    setAutoReview(gc?.autoReview ?? false)
+    setDefaultBranch(gc?.defaultBranch ?? 'main')
+    setBranchPrefix(gc?.branchPrefix ?? 'req/')
+    setConnectionResult(null)
   }, [project.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null
@@ -142,6 +165,28 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
 
   const removeEnv = (idx: number) =>
     setEnvLinks((prev) => prev.filter((_, i) => i !== idx))
+
+  // ── Git Test Connection ────────────────────────────────────────────────────
+  const handleTestConnection = async () => {
+    setTestingConnection(true)
+    setConnectionResult(null)
+    try {
+      const res = await fetch(`/api/v1/projects/${project.id}/git/test-connection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      setConnectionResult(data)
+      if (data.ok && data.defaultBranch) {
+        setDefaultBranch(data.defaultBranch)
+      }
+    } catch {
+      setConnectionResult({ ok: false, error: '请求失败，请检查后端服务' })
+    } finally {
+      setTestingConnection(false)
+    }
+  }
+
   // ── AI Generate Context ─────────────────────────────────────────────────────
 
   const handleGenerateContext = async () => {
@@ -239,8 +284,17 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
       lessons,
     }
 
+    const gitConfig: GitConfig = {
+      defaultBranch,
+      branchPrefix,
+      autoCreatePR,
+      autoReview,
+      ...(githubToken ? { githubToken } : {}),  // 仅在输入了新 Token 时才传
+    }
+
     const settings: ProjectSettings = {
       repository: repository.trim() || undefined,
+      gitConfig,
       environments: envLinks.filter((e) => e.name.trim() || e.url.trim()),
       context: mergedContext,
     }
@@ -322,7 +376,7 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
                   onChange={(e) => setBasic((p) => ({ ...p, ownerId: e.target.value }))}
                   className={inputCls}
                 >
-                  {mockMembers.map((m) => (
+                  {TEAM_MEMBERS.map((m) => (
                     <option key={m.id} value={m.id}>{m.name} · {m.role}</option>
                   ))}
                 </select>
@@ -383,11 +437,138 @@ export function ProjectSettingsModal({ open, project, onClose }: Props) {
               <Field label="代码仓库">
                 <input
                   value={repository}
-                  onChange={(e) => setRepository(e.target.value)}
+                  onChange={(e) => { setRepository(e.target.value); setConnectionResult(null) }}
                   placeholder="https://github.com/org/repo"
-                  className={inputCls}
+                  disabled={hasRunningRequirements}
+                  title={hasRunningRequirements ? '有需求正在执行，暂时不可修改' : undefined}
+                  className={cn(inputCls, hasRunningRequirements && 'opacity-50 cursor-not-allowed')}
                 />
               </Field>
+
+              {/* Git Token + 连接测试 */}
+              {repository.trim() && (
+                <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--bg-panel-2)] p-3">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-2)]">
+                    <GitBranch size={12} />
+                    <span>Git 配置</span>
+                  </div>
+
+                  <Field label="GitHub Token">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type={showToken ? 'text' : 'password'}
+                          value={githubToken}
+                          onChange={(e) => setGithubToken(e.target.value)}
+                          placeholder={existingGitConfig?.githubToken ? '已配置（输入新值覆盖）' : '粘贴 GitHub Personal Access Token'}
+                          disabled={hasRunningRequirements}
+                          title={hasRunningRequirements ? '有需求正在执行，暂时不可修改' : undefined}
+                          className={cn(inputCls, hasRunningRequirements && 'opacity-50 cursor-not-allowed')}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowToken(!showToken)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-3)] hover:text-[var(--text-1)]"
+                        >
+                          {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-[10px] text-[var(--text-3)]">
+                      需要 <code className="rounded bg-[var(--bg-panel-3)] px-1">repo</code> 权限 ·{' '}
+                      <a
+                        href="https://github.com/settings/tokens/new?scopes=repo&description=AI-DZHT"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[var(--accent)] hover:underline inline-flex items-center gap-0.5"
+                      >
+                        创建 Token <ExternalLink size={10} />
+                      </a>
+                    </p>
+                  </Field>
+
+                  {/* 测试连接按钮 */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={testingConnection}
+                      className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-2)] hover:text-[var(--accent)] hover:border-[var(--accent)] disabled:opacity-50"
+                    >
+                      {testingConnection ? <Loader2 size={12} className="animate-spin" /> : <GitBranch size={12} />}
+                      测试连接
+                    </button>
+                    {connectionResult && (
+                      <div className={cn(
+                        'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px]',
+                        connectionResult.ok
+                          ? 'bg-green-500/10 text-green-400'
+                          : 'bg-red-500/10 text-red-400',
+                      )}>
+                        {connectionResult.ok ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                        {connectionResult.ok
+                          ? `连接成功 · ${connectionResult.login} · 默认分支: ${connectionResult.defaultBranch}`
+                          : connectionResult.error}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PR 自动化开关 */}
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-2)] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoCreatePR}
+                        onChange={(e) => setAutoCreatePR(e.target.checked)}
+                        className="rounded border-[var(--border)]"
+                      />
+                      完成后自动创建 PR
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-2)] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoReview}
+                        onChange={(e) => setAutoReview(e.target.checked)}
+                        disabled={!autoCreatePR}
+                        className="rounded border-[var(--border)] disabled:opacity-40"
+                      />
+                      自动 AI 审查
+                    </label>
+                  </div>
+
+                  {/* 高级配置折叠区 */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedGit(!showAdvancedGit)}
+                    className="flex items-center gap-1 text-[10px] text-[var(--text-3)] hover:text-[var(--text-2)]"
+                  >
+                    <ChevronDown size={10} className={cn('transition-transform', showAdvancedGit && 'rotate-180')} />
+                    高级配置
+                  </button>
+                  {showAdvancedGit && (
+                    <div className="space-y-2 pl-3 border-l-2 border-[var(--border)]">
+                      <div className="flex gap-3">
+                        <Field label="默认分支" className="flex-1">
+                          <input
+                            value={defaultBranch}
+                            onChange={(e) => setDefaultBranch(e.target.value)}
+                            placeholder="main"
+                            className={inputCls}
+                          />
+                        </Field>
+                        <Field label="分支前缀" className="flex-1">
+                          <input
+                            value={branchPrefix}
+                            onChange={(e) => setBranchPrefix(e.target.value)}
+                            placeholder="req/"
+                            className={inputCls}
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <div className="mb-2 flex items-center justify-between">
@@ -682,9 +863,9 @@ function toBasicForm(project: Project): BasicForm {
   }
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, children, className }: { label: string; required?: boolean; children: React.ReactNode; className?: string }) {
   return (
-    <label className="block">
+    <label className={cn('block', className)}>
       <span className="mb-1.5 block text-xs font-medium text-[var(--text-2)]">
         {label}
         {required && <span className="ml-0.5 text-[var(--danger)]">*</span>}

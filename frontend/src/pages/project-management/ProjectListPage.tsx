@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { mockMembers } from '@/mocks/data/projects'
+import { TEAM_MEMBERS } from '@/types/project'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import type { Project, ProjectStatus } from '@/types/project'
@@ -54,7 +54,7 @@ export function ProjectListPage() {
   const [form, setForm] = useState<ProjectForm>({
     name: '',
     description: '',
-    ownerId: mockMembers[0]?.id ?? '',
+    ownerId: TEAM_MEMBERS[0]?.id ?? '',
     startDate: '',
     endDate: '',
   })
@@ -81,7 +81,7 @@ export function ProjectListPage() {
   const emptyForm = (): ProjectForm => ({
     name: '',
     description: '',
-    ownerId: mockMembers[0]?.id ?? '',
+    ownerId: TEAM_MEMBERS[0]?.id ?? '',
     startDate: '',
     endDate: '',
   })
@@ -222,7 +222,7 @@ export function ProjectListPage() {
             }
             const reqCount = req.total
             const activePipes = overview?.active ?? []
-            const owner = mockMembers.find((m) => m.id === project.ownerId)
+            const owner = TEAM_MEMBERS.find((m) => m.id === project.ownerId)
             return (
               <article
                 key={project.id}
@@ -390,7 +390,7 @@ export function ProjectListPage() {
                   onChange={(e) => setForm((prev) => ({ ...prev, ownerId: e.target.value }))}
                   className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-panel-2)] px-3 text-sm text-[var(--text-1)] outline-none focus:border-[var(--accent)]"
                 >
-                  {mockMembers.map((m) => (
+                  {TEAM_MEMBERS.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name} · {m.role}
                     </option>

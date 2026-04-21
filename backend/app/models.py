@@ -62,6 +62,11 @@ class EnvLink(BaseModel):
 class GitConfig(BaseModel):
     defaultBranch: str = "main"
     branchPrefix: str = "req/"
+    githubToken: Optional[str] = None
+    autoCreatePR: bool = False
+    autoReview: bool = False
+    prTemplate: Optional[str] = None
+    tokenStatus: Optional[str] = None    # valid / invalid / None (只在 GET 响应中出现)
 
 
 class ProjectSettings(BaseModel):
@@ -174,6 +179,17 @@ class StoryModel(BaseModel):
     pipeline: list[PipelineStepModel] = []
 
 
+class RequirementGitInfo(BaseModel):
+    branch: Optional[str] = None
+    prUrl: Optional[str] = None
+    prNumber: Optional[int] = None
+    prState: Optional[str] = None    # open / changes_requested / approved / merged / closed
+    commitCount: int = 0
+    additions: int = 0
+    deletions: int = 0
+    lastCommitHash: Optional[str] = None
+
+
 class RequirementOut(BaseModel):
     id: str
     projectId: str
@@ -186,6 +202,7 @@ class RequirementOut(BaseModel):
     pipeline: list[PipelineStepModel] = []
     stories: list[StoryModel] = []
     tokenUsage: Optional[int] = None
+    gitInfo: Optional[RequirementGitInfo] = None
 
 
 class RequirementCreateRequest(BaseModel):
@@ -305,6 +322,78 @@ class DismissAdvisoryRequest(BaseModel):
 class UserInputBody(BaseModel):
     text: str = ""
     skip: bool = False
+    selectedOptions: Optional[list[str]] = None       # Workshop 结构化选项回答
+    attachmentIds: Optional[list[str]] = None         # 关联的上传附件 ID
+    issueAction: Optional[str] = None                 # 阶段 4 待处理项操作
+
+
+# ── Workshop 模型 ──────────────────────────────────────────────────────────────
+
+class InteractionElement(BaseModel):
+    """Workshop 结构化交互元素 — Agent 提问时使用"""
+    type: Literal['single_choice', 'multi_choice', 'text', 'confirmation']
+    id: str                                           # 问题唯一 ID，用于匹配回答
+    question: str
+    context: Optional[str] = None                     # 为什么问这个（建立专业信任）
+    options: Optional[list[dict]] = None              # [{id, label, description?}]
+    allowSkip: bool = True
+    required: bool = True
+
+
+class DomainConfig(BaseModel):
+    """单个领域的配置"""
+    id: str                                           # domain_business, domain_users, ...
+    name: str                                         # 业务目标与度量
+    icon: str                                         # 📊
+    description: str                                  # 明确做这个功能的 WHY
+    requiredTopics: list[str] = []                    # [必答] / [条件] 话题列表
+
+
+class WorkshopConfig(BaseModel):
+    """Workshop 模式完整配置"""
+    enabled: bool = False
+    defaultType: str = "feature"
+    requirementTypes: list[str] = ["feature", "new_product", "tech_refactor"]
+    maxDomainsSkipped: int = 2
+
+
+class WorkshopSessionOut(BaseModel):
+    """Workshop 会话状态（前端恢复用）"""
+    id: str
+    reqId: str
+    stepId: str
+    phase: str                                        # briefing_pending|dialogue|generating|quality_review|done|abandoned
+    currentDomainIndex: int = 0
+    requirementType: Optional[str] = None
+    briefingData: Optional[dict] = None
+    accumulatedSummary: Optional[dict] = None         # 各领域压缩摘要
+    qualityReport: Optional[dict] = None
+    createdAt: int = 0
+    updatedAt: int = 0
+
+
+class QualityDimension(BaseModel):
+    """质量评分维度"""
+    score: int
+    details: list[str] = []
+
+
+class QualityFindingOut(BaseModel):
+    """质量审查发现项"""
+    ruleId: int
+    severity: str                                     # blocking | warning
+    title: str
+    description: str
+    suggestion: str
+    affectedSections: list[str] = []
+
+
+class QualityReportOut(BaseModel):
+    """质量报告（前端渲染用）"""
+    totalScore: int
+    dimensions: dict[str, QualityDimension]
+    findings: list[QualityFindingOut]
+    hasBlockingIssues: bool
 
 
 class ConfirmSuggestionRequest(BaseModel):
@@ -400,6 +489,7 @@ class PromptBlocksModel(BaseModel):
     capabilityScope: str = ""
     behaviorConstraints: str = ""
     outputSpec: str = ""
+    workshopConfig: Optional[WorkshopConfig] = None   # Workshop 模式配置（仅 Lena 等 Agent 启用）
 
 
 class AgentOut(BaseModel):

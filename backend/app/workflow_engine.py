@@ -184,6 +184,8 @@ async def run_commander(
         except asyncio.CancelledError:
             pass  # 被 abort 取消，静默退出
         except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Commander 异常 [{req_id}]: {e}", exc_info=True)
             _mark_current_running_step_blocked(req_id, str(e))
         finally:
             _running_tasks.pop(req_id, None)
@@ -206,6 +208,8 @@ async def abort_pipeline(req_id: str) -> bool:
         task.cancel()
     # 清理暂停事件
     cleanup_step_pause(req_id)
+    # 清理旧的 Commander 对话状态，防止 resume 时误用旧上下文跳过步骤
+    delete_commander_state(req_id)
     # 更新需求状态
     req = get_requirement(req_id)
     if req:
@@ -297,6 +301,14 @@ async def _commander_loop(
         messages: list[dict] = json.loads(saved["messages"])
         step_id_in_result = (approval_result or {}).get("step_id")
 
+        # 检测是否为 Workshop 步骤恢复（静默化 Commander 事件）
+        _is_workshop_resume = False
+        if step_id_in_result:
+            req_check = get_requirement(req_id)
+            step_check = next((s for s in req_check["pipeline"] if s["id"] == step_id_in_result), None)
+            if step_check and step_check.get("status", "").startswith("workshop_"):
+                _is_workshop_resume = True
+
         if "skip_interview" in (approval_result or {}):
             # 访谈阶段恢复：用户已回答，告知 Commander 重新调用 invoke_agent
             tool_content = {
@@ -307,10 +319,11 @@ async def _commander_loop(
                     f"用户已回复。请再次调用 invoke_agent(step_id='{step_id_in_result}') 继续执行该步骤。",
                 ),
             }
-            save_commander_event(
-                req_id, "commander_thinking", "commander", "Commander",
-                "用户已提供信息，重新调用 Agent 继续执行...",
-            )
+            if not _is_workshop_resume:
+                save_commander_event(
+                    req_id, "commander_thinking", "commander", "Commander",
+                    "用户已提供信息，重新调用 Agent 继续执行...",
+                )
         elif step_id_in_result:
             # 审批通过恢复：构建完整 invoke_agent 返回值，让 Commander 继续下一步
             req_fresh = get_requirement(req_id)
@@ -360,10 +373,13 @@ async def _commander_loop(
             )
         else:
             user_msg = "请开始执行流水线。"
-            save_commander_event(
-                req_id, "commander_thinking", "commander", "Commander",
-                "正在分析流水线，准备开始执行...",
-            )
+            # 如果第一步已是 workshop 状态，不发射 commander_thinking
+            first_step = next((s for s in req["pipeline"] if s.get("status") not in ("done",)), None)
+            if not (first_step and first_step.get("status", "").startswith("workshop_")):
+                save_commander_event(
+                    req_id, "commander_thinking", "commander", "Commander",
+                    "正在分析流水线，准备开始执行...",
+                )
 
         messages = [
             {"role": "system", "content": _build_commander_system(req, project)},
@@ -371,17 +387,23 @@ async def _commander_loop(
         ]
 
         # 创建需求分支
-        ws = _get_workspace(project_id, project)
+        ws = _get_workspace(project_id, project, req["code"])
         if ws:
             try:
                 branch = ws.create_branch(req["code"])
+                _update_git_info(req_id, branch=branch)
                 save_commander_event(
                     req_id, "system_info", "system", "Commander",
                     f"已创建工作分支 {branch}",
                     {"branch": branch},
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                hint, action = _diagnose_git_error(e)
+                save_commander_event(
+                    req_id, "git_error", "system", "Commander",
+                    f"创建工作分支失败：{hint}",
+                    {"error_type": "branch_create", "action": action},
+                )
 
     max_iterations = len(req["pipeline"]) * 6 + 20  # 安全上限（每步可能有访谈+重执行+审批）
     iteration = 0
@@ -396,13 +418,16 @@ async def _commander_loop(
         )
         messages.append(msg_dict)
 
-        # 如果 Commander 有推理文本，发射事件
+        # 如果 Commander 有推理文本，发射事件（Workshop 阶段静默）
         content_text = msg_dict.get("content", "")
         if content_text and isinstance(content_text, str) and content_text.strip():
-            save_commander_event(
-                req_id, "commander_thinking", "commander", "Commander",
-                content_text.strip(),
-            )
+            req_now = get_requirement(req_id)
+            has_workshop = any(s.get("status", "").startswith("workshop_") for s in req_now.get("pipeline", []))
+            if not has_workshop:
+                save_commander_event(
+                    req_id, "commander_thinking", "commander", "Commander",
+                    content_text.strip(),
+                )
 
         tool_calls = msg_dict.get("tool_calls") or []
 
@@ -460,15 +485,37 @@ async def _dispatch(
         step = next((s for s in req["pipeline"] if s["id"] == args["step_id"]), None)
         step_name = step["name"] if step else args["step_id"]
         agent_name = step["agentName"] if step else "Agent"
-        save_commander_event(
-            req_id, "agent_invoke", "commander", "Commander",
-            f"正在调用 {agent_name} 执行「{step_name}」...",
-            {"step_id": args["step_id"], "agent_name": agent_name},
-        )
+
+        # Workshop 步骤不发射 agent_invoke 事件
+        is_workshop_step = False
+        if step:
+            from .storage import get_agent_by_name
+            agent_rec = get_agent_by_name(step.get("agentName", ""))
+            pb = agent_rec.get("promptBlocks") if agent_rec else None
+            if pb and isinstance(pb, dict):
+                wc = pb.get("workshopConfig")
+                if wc and isinstance(wc, dict) and wc.get("enabled"):
+                    is_workshop_step = True
+        if not is_workshop_step:
+            save_commander_event(
+                req_id, "agent_invoke", "commander", "Commander",
+                f"正在调用 {agent_name} 执行「{step_name}」...",
+                {"step_id": args["step_id"], "agent_name": agent_name},
+            )
         result = await _execute_worker(req_id, project_id, args["step_id"])
 
         # ★ 代码级拦截：Worker 需要用户输入，直接暂停
         if result.get("status") == "need_input":
+            workshop_phase = result.get("workshop_phase")
+            if workshop_phase:
+                # Workshop 模式 — _execute_worker 已设置好 step status（workshop_briefing 等），不覆盖
+                return {
+                    "status": "awaiting_user_input",
+                    "step_id": args["step_id"],
+                    "message": f"用户补充了信息。请再次调用 invoke_agent(step_id='{args['step_id']}') 继续执行该步骤。",
+                }, True
+
+            # 传统访谈模式
             req = get_requirement(req_id)
             step = next((s for s in req["pipeline"] if s["id"] == args["step_id"]), None)
             a_name = step["agentName"] if step else "Agent"
@@ -552,10 +599,25 @@ async def _dispatch(
                     f"请先调用 invoke_agent 完成这些步骤。"
                 ),
             }, False
-        _mark_pipeline_done(req_id)
+        await _mark_pipeline_done(req_id)
+        # 重新读取最新需求（含 gitInfo）
+        req = get_requirement(req_id)
+        git_info = req.get("gitInfo") or {}
         save_commander_event(
             req_id, "pipeline_complete", "system", "Commander",
             "所有步骤已完成，流水线执行结束。",
+            {
+                "steps_done": len([s for s in req["pipeline"] if s["status"] == "done"]),
+                "artifacts_count": sum(len(s.get("artifacts", [])) for s in req["pipeline"]),
+                "git": {
+                    "branch": git_info.get("branch"),
+                    "commitCount": git_info.get("commitCount", 0),
+                    "additions": git_info.get("additions", 0),
+                    "deletions": git_info.get("deletions", 0),
+                    "prUrl": git_info.get("prUrl"),
+                    "prNumber": git_info.get("prNumber"),
+                } if git_info.get("branch") else None,
+            },
         )
         return {"status": "complete"}, True
 
@@ -573,16 +635,69 @@ async def _dispatch(
 
 # ── Worker 执行 ───────────────────────────────────────────────────────────────
 
-def _get_workspace(project_id: str, project: dict) -> WorkspaceManager | None:
+
+def _diagnose_git_error(e: Exception) -> tuple[str, str]:
+    """返回 (用户友好消息, 建议操作action)"""
+    stderr = getattr(e, 'stderr', str(e))
+    if "Authentication failed" in stderr or "could not read Username" in stderr:
+        return "认证失败 — 请检查仓库 URL 和 Token", "check_settings"
+    if "not a git repository" in stderr:
+        return "仓库地址无效", "check_settings"
+    if "non-fast-forward" in stderr:
+        return "远程分支有新提交 — 已尝试自动合并", "retry"
+    if "Permission denied" in stderr:
+        return "权限不足 — Token 需要 repo 写入权限", "check_settings"
+    if "Could not resolve host" in stderr or "Connection refused" in stderr:
+        return "网络连接失败", "retry"
+    if "does not exist" in stderr and "remote ref" in stderr:
+        return "远程分支不存在 — 可能已被手动删除", "retry"
+    return str(e)[:200], "check_settings"
+
+
+def _update_git_info(req_id: str, **kwargs: Any) -> None:
+    """更新需求的 gitInfo 字段。支持增量更新。"""
+    import re as _re
+    req = get_requirement(req_id)
+    if not req:
+        return
+    gi = req.get("gitInfo") or {}
+    if kwargs.get("commit_hash"):
+        gi["lastCommitHash"] = kwargs["commit_hash"]
+        gi["commitCount"] = gi.get("commitCount", 0) + 1
+    if kwargs.get("additions_delta") is not None:
+        gi["additions"] = gi.get("additions", 0) + kwargs["additions_delta"]
+        gi["deletions"] = gi.get("deletions", 0) + kwargs["deletions_delta"]
+    for k in ("branch", "prUrl", "prNumber", "prState"):
+        if k in kwargs:
+            gi[k] = kwargs[k]
+    req["gitInfo"] = gi
+    save_requirement(req_id, req)
+
+
+def _parse_shortstat(stat: str) -> tuple[int, int]:
+    """解析 git diff --shortstat 输出，返回 (additions, deletions)。"""
+    import re as _re
+    adds = int(m.group(1)) if (m := _re.search(r"(\d+) insertion", stat)) else 0
+    dels = int(m.group(1)) if (m := _re.search(r"(\d+) deletion", stat)) else 0
+    return adds, dels
+
+
+def _get_workspace(project_id: str, project: dict,
+                    req_code: str | None = None) -> WorkspaceManager | None:
     """Get Git workspace for a project (if repository is configured)."""
     settings = project.get("settings") or {}
     repo_url = settings.get("repository")
     if not repo_url:
         return None
     git_config = settings.get("gitConfig", {})
-    ws = WorkspaceManager(project_id, repo_url, git_config)
+    ws = WorkspaceManager(project_id, repo_url, git_config, req_code=req_code)
     try:
-        return ws if ws.ensure_repo() else None
+        if not ws.ensure_repo():
+            return None
+        # 有 req_code 时确保 worktree 存在（resume 后可能丢失）
+        if req_code and not ws.work_dir.exists():
+            ws.create_branch(req_code)
+        return ws
     except Exception:
         return None
 
@@ -602,17 +717,24 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
     prompt_blocks = agent_record.get("promptBlocks") if agent_record else None
 
     # Git 工作空间（若项目配置了仓库）
-    ws = _get_workspace(project_id, project)
+    ws = _get_workspace(project_id, project, req["code"])
 
     # 加载访谈历史（跨暂停累积）
     interview_hist = get_interview_history(req_id, step_id)
 
     if not interview_hist:
-        save_commander_event(
-            req_id, "agent_working", "agent", step["agentName"],
-            f"{step['agentName']} 开始工作...",
-            {"step_id": step_id, "step_name": step["name"]},
-        )
+        # Workshop 步骤不发射 agent_working 事件（由 Workshop 自己管理）
+        is_workshop = False
+        if prompt_blocks and isinstance(prompt_blocks, dict):
+            wc = prompt_blocks.get("workshopConfig")
+            if wc and isinstance(wc, dict) and wc.get("enabled"):
+                is_workshop = True
+        if not is_workshop:
+            save_commander_event(
+                req_id, "agent_working", "agent", step["agentName"],
+                f"{step['agentName']} 开始工作...",
+                {"step_id": step_id, "step_name": step["name"]},
+            )
 
     # 进度回调 → Commander 面板实时日志
     async def on_progress(tag: str, message: str, extra_metadata: dict | None = None):
@@ -622,6 +744,10 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
         # step_paused 使用独立事件类型，前端单独渲染为暂停卡片
         if tag == "step_paused":
             event_type = "step_paused"
+            content = message
+        # Workshop 事件使用独立事件类型
+        elif tag.startswith("workshop_"):
+            event_type = tag
             content = message
         else:
             event_type = "agent_working"
@@ -637,26 +763,83 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
     # 注册暂停事件（交互式执行）
     pause_evt = register_step_pause(req_id, step_id)
 
-    result = await execute_worker_with_review(
-        agent_name=step["agentName"],
-        agent_role=agent_role,
-        step_name=step["name"],
-        commands=step.get("commands", ""),
-        req_title=req["title"],
-        req_summary=req.get("summary", ""),
-        project_context=project.get("context", {}),
-        prev_artifact_summaries=prev_summaries,
-        prompt_blocks=prompt_blocks,
-        on_progress=on_progress,
-        code_context=ws.build_code_context(agent_role) if ws else "",
-        interview_history=interview_hist,
-        req_id=req_id,
-        step_id=step_id,
-        review_policy=step.get("reviewPolicy"),
-    )
+    # ★ Workshop 模式：检查 Agent 是否启用了 Workshop
+    workshop_config = None
+    if prompt_blocks and isinstance(prompt_blocks, dict):
+        wc = prompt_blocks.get("workshopConfig")
+        if wc and (isinstance(wc, dict) and wc.get("enabled")) or (hasattr(wc, "enabled") and wc.enabled):
+            workshop_config = wc
 
-    # ★ 访谈阶段：Worker 需要用户输入，直接返回给 _dispatch 做拦截
+    if workshop_config:
+        # Workshop 模式：使用无状态执行引擎
+        from .llm import execute_workshop_step
+
+        # 加载用户输入（如有）
+        user_input = None
+        if interview_hist:
+            # 最后一条用户回答作为输入
+            last_answer = next(
+                (h for h in reversed(interview_hist) if h.get("type") == "answer"),
+                None,
+            )
+            if last_answer:
+                import json as _json
+                try:
+                    user_input = _json.loads(last_answer.get("text", "{}"))
+                except (ValueError, TypeError):
+                    user_input = {"text": last_answer.get("text", "")}
+
+        result = await execute_workshop_step(
+            req_id=req_id,
+            step_id=step_id,
+            agent_name=step["agentName"],
+            agent_role=agent_role,
+            req_title=req["title"],
+            req_summary=req.get("summary", ""),
+            project_context=project.get("context", {}),
+            prev_artifact_summaries=prev_summaries,
+            prompt_blocks=prompt_blocks,
+            on_progress=on_progress,
+            code_context=ws.build_code_context(agent_role) if ws else "",
+            user_input=user_input,
+        )
+    else:
+        # 传统模式：使用现有的访谈 → 执行 → 审查流程
+        result = await execute_worker_with_review(
+            agent_name=step["agentName"],
+            agent_role=agent_role,
+            step_name=step["name"],
+            commands=step.get("commands", ""),
+            req_title=req["title"],
+            req_summary=req.get("summary", ""),
+            project_context=project.get("context", {}),
+            prev_artifact_summaries=prev_summaries,
+            prompt_blocks=prompt_blocks,
+            on_progress=on_progress,
+            code_context=ws.build_code_context(agent_role) if ws else "",
+            interview_history=interview_hist,
+            req_id=req_id,
+            step_id=step_id,
+            review_policy=step.get("reviewPolicy"),
+        )
+
+    # ★ 访谈/Workshop 阶段：Worker 需要用户输入，设置对应 step status
     if result.get("status") == "need_input":
+        workshop_phase = result.get("workshop_phase")
+        if workshop_phase == "active":
+            _update_step(req_id, step_id, "workshop_active")
+        elif workshop_phase == "prd_review":
+            _update_step(req_id, step_id, "workshop_prd_review")
+        elif workshop_phase == "generating":
+            _update_step(req_id, step_id, "workshop_generating")
+        # 传统访谈兼容
+        elif workshop_phase == "briefing":
+            _update_step(req_id, step_id, "workshop_active")
+        elif workshop_phase == "dialogue":
+            _update_step(req_id, step_id, "workshop_active")
+        elif workshop_phase == "quality_review":
+            _update_step(req_id, step_id, "workshop_prd_review")
+        # 默认 pending_input（传统访谈模式或未知状态）
         return result
 
     # 持久化产出物（DB + Git 文件）
@@ -679,15 +862,35 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
             try:
                 file_path = ws.write_artifact(req["code"], agent_role, art)
                 art["filePath"] = file_path
-            except Exception:
-                pass  # Git 写入失败不阻塞流水线
+            except Exception as e:
+                hint, action = _diagnose_git_error(e)
+                save_commander_event(
+                    req_id, "git_error", "system", "Commander",
+                    f"产出物写入 Git 失败：{hint}",
+                    {"error_type": "artifact_write", "action": action},
+                )
 
     # Git commit（如果有产出物且有工作空间）
+    commit_hash = ""
     if ws and artifacts:
         try:
-            ws.commit(f"[{step['agentName']}] {step['name']} 完成")
-        except Exception:
-            pass
+            commit_hash = ws.commit(f"[{step['agentName']}] {step['name']} 完成",
+                                     author_name=step['agentName'])
+            if commit_hash:
+                try:
+                    stat = ws._git("diff", "--shortstat", "HEAD~1", "HEAD")
+                    adds, dels = _parse_shortstat(stat)
+                except Exception:
+                    adds, dels = 0, 0
+                _update_git_info(req_id, commit_hash=commit_hash,
+                                 additions_delta=adds, deletions_delta=dels)
+        except Exception as e:
+            hint, action = _diagnose_git_error(e)
+            save_commander_event(
+                req_id, "git_error", "system", "Commander",
+                f"Git 提交失败：{hint}",
+                {"error_type": "commit", "action": action},
+            )
 
     # Path B：存储 Agent 建议的上下文更新，待人工确认
     for suggestion in result.get("suggestedContextUpdates", []):
@@ -703,10 +906,13 @@ async def _execute_worker(req_id: str, project_id: str, step_id: str) -> dict:
 
     # 发射 agent_done 事件
     art_summary = "、".join(a.get("name", "产出物") for a in artifacts) if artifacts else "无产出物"
+    event_meta: dict[str, Any] = {"step_id": step_id, "artifacts": art_meta}
+    if commit_hash:
+        event_meta["commit"] = commit_hash[:7]
     save_commander_event(
         req_id, "agent_done", "agent", step["agentName"],
         f"{step['agentName']} 完成了「{step['name']}」，产出：{art_summary}",
-        {"step_id": step_id, "artifacts": art_meta},
+        event_meta,
     )
 
     # 只返回摘要给 Commander（控制 token）
@@ -760,7 +966,7 @@ def _update_step(
     save_requirement(req_id, req)
 
 
-def _mark_pipeline_done(req_id: str) -> None:
+async def _mark_pipeline_done(req_id: str) -> None:
     req = get_requirement(req_id)
     now = datetime.now().strftime("%H:%M")
     for s in req["pipeline"]:
@@ -771,24 +977,242 @@ def _mark_pipeline_done(req_id: str) -> None:
     save_requirement(req_id, req)
     sync_project_status(req["projectId"])
 
-    # 推送 Git 分支
     project = get_project(req["projectId"])
-    ws = _get_workspace(req["projectId"], project)
+    settings = project.get("settings") or {}
+    git_config = settings.get("gitConfig", {})
+    ws = _get_workspace(req["projectId"], project, req["code"])
+
+    push_ok = False
+    pr_result = None
+
     if ws:
         branch = f"{ws.branch_prefix}{req['code']}"
+        # ── Push ──
         try:
             ws.push(branch)
+            push_ok = True
             save_commander_event(
                 req_id, "system_info", "system", "Commander",
                 f"已推送分支 {branch} 到远程仓库",
                 {"branch": branch},
             )
         except Exception as e:
+            hint, action = _diagnose_git_error(e)
             save_commander_event(
-                req_id, "system_info", "system", "Commander",
-                f"推送分支失败：{e}",
-                {"error": str(e)},
+                req_id, "git_error", "system", "Commander",
+                f"推送分支失败：{hint}",
+                {"error_type": "push", "action": action},
             )
+
+        # ── PR（仅 push 成功后）──
+        if push_ok and git_config.get("autoCreatePR") and git_config.get("githubToken"):
+            pr_result = await _create_pr_if_needed(req_id, req, ws, git_config, branch)
+
+        # ── 审查（仅 PR 存在时）──
+        if pr_result and git_config.get("autoReview"):
+            task = asyncio.create_task(
+                _trigger_pr_review(req_id, pr_result, req, ws, git_config))
+            task.add_done_callback(_log_task_exception)
+
+        # ── Worktree 清理（push 成功时）──
+        if push_ok:
+            ws.cleanup()
+
+
+def _log_task_exception(task: asyncio.Task) -> None:
+    """防止后台 asyncio.Task 异常被吞没。"""
+    import logging
+    if not task.cancelled() and task.exception():
+        logging.getLogger(__name__).error(f"后台任务异常: {task.exception()}")
+
+
+def _build_pr_body(req: dict, git_config: dict) -> str:
+    """优先使用 prTemplate，否则默认模板。"""
+    steps_done = [s for s in req.get("pipeline", []) if s.get("status") == "done"]
+    artifacts_all = [
+        f"- **{a.get('name')}** ({a.get('type')}): {a.get('summary', '')}"
+        for s in steps_done for a in s.get("artifacts", [])
+    ]
+    variables = {
+        "req_code": req.get("code", ""),
+        "req_title": req.get("title", ""),
+        "req_description": req.get("summary", ""),
+        "steps_count": str(len(steps_done)),
+        "steps_summary": "\n".join(
+            f"- {s.get('name')} ({s.get('agentName')})" for s in steps_done
+        ),
+        "artifacts_list": "\n".join(artifacts_all) or "无产出物",
+    }
+    template = git_config.get("prTemplate")
+    if template:
+        try:
+            return template.format(**variables)
+        except KeyError:
+            pass
+    return f"""## {variables['req_code']} — {variables['req_title']}
+
+### 需求描述
+{req.get('summary', '无')}
+
+### 执行步骤（{variables['steps_count']} 步完成）
+{variables['steps_summary']}
+
+### 产出物
+{variables['artifacts_list']}
+
+---
+> 由 AI-DZHT 多 Agent 平台自动生成"""
+
+
+async def _create_pr_if_needed(
+    req_id: str, req: dict, ws: Any, git_config: dict, branch: str
+) -> dict | None:
+    """创建 PR（防重复）。成功返回 {url, number}，失败返回 None。"""
+    from .git_provider import GitHubProvider, parse_repo_url
+    from .storage import decrypt_token
+
+    token = decrypt_token(git_config.get("githubToken"))
+    if not token:
+        save_commander_event(
+            req_id, "git_error", "system", "Commander",
+            "Token 无效，无法创建 PR",
+            {"error_type": "pr_creation", "action": "check_settings"},
+        )
+        return None
+
+    owner, repo = parse_repo_url(ws.repo_url)
+    provider = GitHubProvider(owner, repo, token)
+    try:
+        existing = await provider.get_pr_for_branch(branch)
+        if existing:
+            pr_info = {"url": existing["html_url"], "number": existing["number"]}
+            save_commander_event(
+                req_id, "git_pr_linked", "system", "Commander",
+                f"检测到已有 PR #{existing['number']}，已关联",
+                {"pr_url": pr_info["url"], "pr_number": pr_info["number"],
+                 "branch": branch, "created": False},
+            )
+            _update_git_info(req_id, prUrl=pr_info["url"],
+                             prNumber=pr_info["number"], prState="open")
+            return pr_info
+
+        title = f"[{req['code']}] {req['title']}"
+        body = _build_pr_body(req, git_config)
+        pr = await provider.create_pr(branch, ws.default_branch, title, body)
+        save_commander_event(
+            req_id, "git_pr_created", "system", "Commander",
+            f"已创建 Pull Request #{pr['number']}",
+            {"pr_url": pr["url"], "pr_number": pr["number"],
+             "branch": branch, "created": True},
+        )
+        _update_git_info(req_id, prUrl=pr["url"],
+                         prNumber=pr["number"], prState="open")
+        return pr
+    except Exception as e:
+        save_commander_event(
+            req_id, "git_error", "system", "Commander",
+            f"PR 操作失败：{e}",
+            {"error_type": "pr_creation", "action": "retry"},
+        )
+        return None
+    finally:
+        await provider.close()
+
+
+async def _trigger_pr_review(
+    req_id: str, pr: dict, req: dict, ws: Any, git_config: dict
+) -> None:
+    """后台执行 PR 审查：获取 diff → LLM 审查 → 写评论 → 发射事件。"""
+    from .git_provider import GitHubProvider, parse_repo_url
+    from .storage import decrypt_token
+    from .llm import _chat
+
+    save_commander_event(
+        req_id, "git_review_started", "system", "Commander",
+        f"正在对 PR #{pr['number']} 进行自动审查...",
+        {"pr_number": pr["number"], "pr_url": pr.get("url", "")},
+    )
+    try:
+        # ① 获取 diff（本地 git，不消耗 API 配额）
+        diff_stat = ws._git("diff", f"origin/{ws.default_branch}...HEAD", "--stat")
+        diff_detail = ws._git("diff", f"origin/{ws.default_branch}...HEAD")
+        diff_content = diff_stat + "\n\n" + (
+            diff_detail[:8000] if len(diff_detail) > 8000 else diff_detail
+        )
+
+        # ② 审查 prompt
+        review_prompt = f"""你是严格的 PR 审查员。从两个维度审查代码变更：
+**对抗性审查**：逻辑缺陷、未处理错误路径、安全隐患
+**边界用例**：边界条件、异常路径、跨组件影响
+
+代码变更：
+{diff_content}
+
+JSON 输出：
+{{"findings": [{{"severity": "critical|major|minor", "file": "文件", "issue": "问题", "suggestion": "建议"}}],
+  "verdict": "pass|needs_attention|block",
+  "summary": "一句话总评"}}
+只输出 JSON。"""
+
+        # ③ LLM 审查
+        review_raw = await _chat(
+            messages=[{"role": "user", "content": review_prompt}],
+            max_tokens=2000, json_mode=True,
+        )
+        try:
+            review_data = json.loads(review_raw)
+        except json.JSONDecodeError:
+            review_data = {"findings": [], "verdict": "pass",
+                           "summary": "解析失败，建议人工审查"}
+
+        findings = review_data.get("findings", [])
+        verdict = review_data.get("verdict", "pass")
+        summary = review_data.get("summary", "")
+
+        # ④ 格式化 PR comment
+        lines = [
+            "## AI 自动审查报告", "",
+            f"**结论：** {'通过' if verdict == 'pass' else '需要关注' if verdict == 'needs_attention' else '建议阻止合并'}",
+            f"**摘要：** {summary}",
+        ]
+        if findings:
+            lines.append(f"\n### 发现 ({len(findings)} 项)\n")
+            for f in findings:
+                icon = "🔴" if f.get("severity") == "critical" else "🟡" if f.get("severity") == "major" else "🔵"
+                lines.append(f"{icon} **[{f.get('severity')}]** `{f.get('file', '?')}` — {f.get('issue', '')}")
+                if f.get("suggestion"):
+                    lines.append(f"  > {f['suggestion']}")
+        lines.append("\n---\n> AI-DZHT 自动审查")
+
+        # ⑤ 写回 GitHub
+        token = decrypt_token(git_config.get("githubToken"))
+        if token:
+            owner, repo = parse_repo_url(ws.repo_url)
+            provider = GitHubProvider(owner, repo, token)
+            try:
+                await provider.add_comment(pr["number"], "\n".join(lines))
+            finally:
+                await provider.close()
+
+        # ⑥ 写回平台事件
+        save_commander_event(
+            req_id, "git_review_done", "system", "Commander",
+            f"PR #{pr['number']} 审查完成：{summary}",
+            {"pr_number": pr["number"], "verdict": verdict,
+             "findings_count": len(findings),
+             "critical_count": sum(1 for f in findings if f.get("severity") == "critical")},
+        )
+
+        # ⑦ block 时更新状态
+        if verdict == "block":
+            _update_git_info(req_id, prState="changes_requested")
+
+    except Exception as e:
+        save_commander_event(
+            req_id, "git_error", "system", "Commander",
+            f"PR 审查失败：{e}",
+            {"error_type": "pr_review", "action": "retry"},
+        )
 
 
 def _mark_pipeline_blocked(req_id: str, reason: str) -> None:
@@ -805,8 +1229,13 @@ def _mark_pipeline_blocked(req_id: str, reason: str) -> None:
 
 
 def _mark_current_running_step_blocked(req_id: str, reason: str) -> None:
-    """错误兜底：将当前 running 步骤标记为 blocked。"""
+    """错误兜底：将当前 running 步骤标记为 blocked，并发送事件到聊天流。"""
     try:
         _mark_pipeline_blocked(req_id, reason)
+        save_commander_event(
+            req_id, "pipeline_blocked", "system", "Commander",
+            f"流水线执行出错：{reason[:200]}",
+            {"reason": reason[:200]},
+        )
     except Exception:
         pass  # 避免二次异常掩盖原始错误

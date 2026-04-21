@@ -81,6 +81,7 @@ requirements_table = Table(
     Column("pipeline", Text, default="[]"),            # JSON list
     Column("stories", Text, default="[]"),             # JSON list
     Column("token_usage", Text, nullable=True),        # JSON dict | NULL
+    Column("git_info", Text, nullable=True),           # JSON dict | NULL
     Column("created_at", Integer, default=0),
 )
 
@@ -231,17 +232,91 @@ users_table = Table(
     Column("updated_at", Integer, default=0),
 )
 
+# ── Workshop Sessions ──────────────────────────────────────────────────────
+
+workshop_sessions_table = Table(
+    "workshop_sessions",
+    metadata,
+    Column("id", String, primary_key=True),             # uuid4
+    Column("req_id", String, nullable=False),
+    Column("step_id", String, nullable=False),
+    Column("phase", String, nullable=False),             # briefing_pending|dialogue|generating|quality_review|done|abandoned
+    Column("current_domain_index", Integer, default=0),
+    Column("requirement_type", String, nullable=True),   # feature|new_product|tech_refactor
+    Column("briefing_data", Text, nullable=True),        # JSON ~1KB
+    Column("domain_answers", Text, default="{}"),        # JSON {domain_id: [{q, a, confidence}]}
+    Column("accumulated_summary", Text, default="{}"),   # JSON 各领域压缩摘要 ~1KB
+    Column("prd_file_path", Text, nullable=True),        # 大内容外置：PRD 文件路径
+    Column("context_file_path", Text, nullable=True),    # 大内容外置：compiled_context 路径
+    Column("quality_report", Text, nullable=True),       # JSON ~2KB
+    Column("attachment_ids", Text, default="[]"),         # JSON array
+    Column("messages", Text, default="[]"),              # JSON: LLM 多轮对话消息列表
+    Column("created_at", Integer, nullable=False),
+    Column("updated_at", Integer, nullable=False),
+)
+
+
+def row_to_workshop_session(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "reqId": row.req_id,
+        "stepId": row.step_id,
+        "phase": row.phase,
+        "currentDomainIndex": row.current_domain_index,
+        "requirementType": row.requirement_type,
+        "briefingData": _j(row.briefing_data),
+        "domainAnswers": _j(row.domain_answers, {}),
+        "accumulatedSummary": _j(row.accumulated_summary, {}),
+        "prdFilePath": row.prd_file_path,
+        "contextFilePath": row.context_file_path,
+        "qualityReport": _j(row.quality_report),
+        "attachmentIds": _j(row.attachment_ids, []),
+        "messages": _j(getattr(row, "messages", "[]"), []),
+        "createdAt": row.created_at,
+        "updatedAt": row.updated_at,
+    }
+
 # ── Init ──────────────────────────────────────────────────────────────────────
 
 def init_db() -> None:
     """Create tables (idempotent) and seed if empty."""
     metadata.create_all(engine)
+    _migrate_add_columns()
+    _create_indexes()
     _seed_if_empty()
     _seed_llm_config()
     _seed_commands_if_empty()
     _seed_agents_if_empty()
     _seed_users_if_empty()
     _ensure_reqlead_agent()
+
+
+def _migrate_add_columns() -> None:
+    """Add columns that may not exist in older databases."""
+    import sqlalchemy
+    with engine.connect() as conn:
+        try:
+            conn.execute(sqlalchemy.text("SELECT git_info FROM requirements LIMIT 1"))
+        except Exception:
+            conn.execute(sqlalchemy.text("ALTER TABLE requirements ADD COLUMN git_info TEXT"))
+            conn.commit()
+        try:
+            conn.execute(sqlalchemy.text("SELECT messages FROM workshop_sessions LIMIT 1"))
+        except Exception:
+            conn.execute(sqlalchemy.text("ALTER TABLE workshop_sessions ADD COLUMN messages TEXT DEFAULT '[]'"))
+            conn.commit()
+
+
+def _create_indexes() -> None:
+    """Create performance indexes (idempotent)."""
+    import sqlalchemy
+    with engine.connect() as conn:
+        for stmt in [
+            "CREATE INDEX IF NOT EXISTS idx_events_req_seq ON commander_events(req_id, seq)",
+            "CREATE INDEX IF NOT EXISTS idx_workshop_req ON workshop_sessions(req_id, step_id)",
+        ]:
+            conn.execute(sqlalchemy.text(stmt))
+        conn.commit()
 
 
 # ── Row ↔ dict helpers ────────────────────────────────────────────────────────
@@ -288,6 +363,7 @@ def row_to_requirement(row: Any) -> dict[str, Any]:
         "pipeline": _j(row.pipeline, []),
         "stories": _j(row.stories, []),
         "tokenUsage": _j(row.token_usage, None),
+        "gitInfo": _j(row.git_info, None),
         "_created_at": row.created_at,
     }
 
@@ -671,6 +747,104 @@ def _seed_commands_if_empty() -> None:
              "description": "建立完整设计语言，生成含 Token 的 DESIGN.md",
              "detail": "通过引导对话确定美学方向（10 种可选）、色彩体系（含双主题 CSS 变量）、字体体系和间距 Token，生成 DESIGN.md 设计语言文档，作为所有 UI 实现的单一真相来源。",
              "outputs": "DESIGN.md（设计系统文档）", "next_steps": json.dumps(["CU", "HG"])},
+            # ── Quinn QA 新增命令 ──
+            {"id": "c41", "code": "TS", "name": "测试策略", "phase": "planning", "is_protected": 1, "is_enabled": 1,
+             "description": "风险驱动的测试策略：风险矩阵 + 测试金字塔 + 需求追溯",
+             "detail": "分析 PRD 和架构，为每个模块评估复杂度×变更频率×业务影响的风险评分，输出风险矩阵、测试金字塔分配方案和需求追溯映射表。指导后续测试投入分配，确保高风险模块获得充分覆盖。",
+             "outputs": "test-strategy.md（风险矩阵 + 金字塔 + 追溯表）", "next_steps": json.dumps(["QA", "BE", "TD"])},
+            {"id": "c42", "code": "TRV", "name": "可测试性评审", "phase": "planning", "is_protected": 1, "is_enabled": 1,
+             "description": "Shift-Left 审查：评估 PRD 验收标准的可测量性与可自动化性",
+             "detail": "逐条审查 PRD 验收标准，从可量化、可自动化、边界清晰和可隔离四个维度评分（0-3），标记不可测试的需求并提供具体修订建议。在编码开始前消除「无法验证」的需求。",
+             "outputs": "testability-review.md（评分表 + 修订建议）", "next_steps": json.dumps(["TS"])},
+            {"id": "c43", "code": "SA", "name": "验收标准强化", "phase": "planning", "is_protected": 1, "is_enabled": 1,
+             "description": "补充 Given-When-Then 测试场景，强化 Story 验收标准",
+             "detail": "为每条验收标准补充结构化测试场景（Given-When-Then），识别隐含的边界条件和异常路径。确保每个 Story 在开发前就有清晰的、可直接编写测试的验收定义。",
+             "outputs": "强化后的验收标准文档", "next_steps": json.dumps(["QA"])},
+            {"id": "c44", "code": "QG", "name": "质量门禁", "phase": "qa", "is_protected": 1, "is_enabled": 1,
+             "description": "跨维度质量指标检查与 Go/No-Go 发布决策",
+             "detail": "评估通过率（≥95%）、覆盖率（≥70%）、Flake率（<5%）、P0回归（=0）和性能退化（<10%）五个维度，区分硬门禁（阻断）和软建议（警告），输出明确的发布决策和修复优先级。",
+             "outputs": "quality-gate-report.md（Go/No-Go 决策 + 修复清单）", "next_steps": json.dumps([])},
+            {"id": "c45", "code": "BE", "name": "浏览器测试", "phase": "qa", "is_protected": 0, "is_enabled": 1,
+             "description": "Playwright 浏览器 E2E 测试：语义定位 + 截图 + 多浏览器",
+             "detail": "生成 Playwright 浏览器测试代码，使用语义定位器（getByRole/getByText），在 Headless Chromium 中执行，自动截图关键状态，支持多浏览器矩阵验证。",
+             "outputs": "browser-e2e-report.md + screenshots/", "next_steps": json.dumps(["TH"])},
+            {"id": "c46", "code": "TD", "name": "测试数据", "phase": "qa", "is_protected": 0, "is_enabled": 1,
+             "description": "测试数据管理：fixture factory + 场景数据集 + 数据隔离",
+             "detail": "分析领域模型生成 fixture factory 函数，定义正常/边界/异常场景数据集，规划数据隔离策略（事务回滚/临时DB/独立namespace），确保测试间互不干扰。",
+             "outputs": "fixture 代码 + test-data-strategy.md", "next_steps": json.dumps(["QA"])},
+            {"id": "c47", "code": "IT", "name": "增量选测", "phase": "qa", "is_protected": 1, "is_enabled": 1,
+             "description": "基于 git diff 智能选择受影响的测试，跳过无关测试",
+             "detail": "分析 git diff 识别变更文件，通过依赖映射（touchfiles）选择受影响的测试子集，应用安全规则（变更过广则全量、配置变更则全量），显著减少日常开发的测试执行时间。",
+             "outputs": "test-selection-report.md（选中 + 跳过 + 节省时间）", "next_steps": json.dumps(["QA"])},
+            {"id": "c48", "code": "TH", "name": "测试历史", "phase": "qa", "is_protected": 1, "is_enabled": 1,
+             "description": "持久化测试结果，生成历史对比报告",
+             "detail": "将测试结果标准化存储为 JSON，与上次运行对比识别回归（pass→fail）、改进（fail→pass）、新增/删除测试和耗时变化。最多保留 20 次历史记录。",
+             "outputs": "test-comparison-report.md + {run_id}.json", "next_steps": json.dumps(["CT", "QG"])},
+            {"id": "c49", "code": "CT", "name": "成本追踪", "phase": "qa", "is_protected": 1, "is_enabled": 1,
+             "description": "追踪测试执行成本（时间/Token/API调用），检测性能退化",
+             "detail": "记录每次测试运行的耗时、Token 用量和 API 调用次数，与滚动 5 次平均值对比。当耗时增长>20%或 Token 增长>30%时发出预警，定位贡献最大的测试套件。",
+             "outputs": "cost-performance-report.md + metrics JSON", "next_steps": json.dumps(["QG"])},
+            {"id": "c50", "code": "LJ", "name": "质量评审", "phase": "qa", "is_protected": 0, "is_enabled": 1,
+             "description": "LLM 5 维度测试质量评分：清晰度/完整度/断言质量/边界覆盖/可操作性",
+             "detail": "使用 LLM 对测试代码进行 5 维度质量评审（1-5分），识别最弱环节并输出改进建议。关注断言是否验证业务逻辑、边界条件是否覆盖、测试命名是否清晰。",
+             "outputs": "quality-evaluation-report.md", "next_steps": json.dumps(["QA"])},
+            {"id": "c51", "code": "GTV", "name": "缺陷验证", "phase": "qa", "is_protected": 0, "is_enabled": 0,
+             "description": "植入缺陷验证：评估测试套件的缺陷检测能力",
+             "detail": "加载预定义的 planted-bugs.json，针对植入缺陷运行测试，计算 TP/FN/FP 和检测率。评估测试套件的真实缺陷发现能力，而非仅看覆盖率。",
+             "outputs": "ground-truth-validation-report.md", "next_steps": json.dumps([])},
+            {"id": "c52", "code": "RS", "name": "回归策略", "phase": "qa", "is_protected": 0, "is_enabled": 1,
+             "description": "回归套件健康评分：退役建议 + P0 核心集筛选",
+             "detail": "基于 TH 历史数据为每个测试评分（执行时间、flake 率、唯一覆盖价值），标记从未失败且被其他测试覆盖的为可退役，筛选核心回归集（冒烟测试）。",
+             "outputs": "regression-suite-report.md", "next_steps": json.dumps([])},
+            {"id": "c53", "code": "XA", "name": "跨Agent协作", "phase": "qa", "is_protected": 0, "is_enabled": 1,
+             "description": "向 Dev/PM/SM/Architect 双向反馈质量状态",
+             "detail": "分析当前质量数据，生成针对不同 Agent 角色的反馈：Dev 的可测试性问题、PM 的需求可测性、SM 的 Sprint 质量状态、Architect 的契约缺失。通过 suggestedContextUpdates 注入项目上下文。",
+             "outputs": "quality-feedback-report.md", "next_steps": json.dumps([])},
+            {"id": "c54", "code": "FD", "name": "Flake检测", "phase": "qa", "is_protected": 0, "is_enabled": 1,
+             "description": "识别不稳定测试，计算 flake rate，建议重试策略",
+             "detail": "分析 TH 历史数据识别翻转频率 >10% 的测试，标记为 flaky。提供具体原因分析（时间依赖/外部服务/竞态条件）和修复建议。可选重试执行确认。",
+             "outputs": "flake-detection-report.md", "next_steps": json.dumps([])},
+            {"id": "c55", "code": "OB", "name": "仪表盘", "phase": "qa", "is_protected": 0, "is_enabled": 1,
+             "description": "测试可观测性仪表盘：时间序列 + 回归检测 + Mermaid 趋势图",
+             "detail": "聚合 TH 和 CT 的全部历史数据，生成时间序列趋势图（Mermaid），检测回归模式和长期趋势，输出可观测性仪表盘数据。",
+             "outputs": "dashboard-data.json + 仪表盘报告", "next_steps": json.dumps([])},
+            # ── Amelia 研发工程新增命令 ──
+            {"id": "c61", "code": "RF", "name": "代码重构", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "在保持行为不变的前提下重构代码，消除坏味道",
+             "detail": "识别代码坏味道（长函数、重复逻辑、过深嵌套、God Class 等），制定安全重构策略。每一步保证测试通过，支持提取方法、拆分组件、引入设计模式等常见手法。",
+             "outputs": "重构后的代码 + 变更说明", "next_steps": json.dumps(["CR"])},
+            {"id": "c62", "code": "DG", "name": "问题诊断", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "系统性排查 Bug 根因，输出修复方案",
+             "detail": "从现象出发，通过日志分析、最小复现、二分法定位等手段系统性定位根因。输出诊断过程记录和修复补丁，修复后必须补充回归测试防止复发。",
+             "outputs": "诊断报告 + 修复补丁 + 回归测试", "next_steps": json.dumps(["CR"])},
+            {"id": "c63", "code": "GT", "name": "Git 工作流", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "分支管理、原子提交、PR 创建与冲突解决",
+             "detail": "遵循团队 Git 工作流规范完成分支创建、原子化提交（单一职责）、PR 描述编写和合并冲突处理。提交信息遵循 Conventional Commits 规范。",
+             "outputs": "Git 操作记录（分支/提交/PR）", "next_steps": json.dumps(["CR"])},
+            {"id": "c64", "code": "API", "name": "API 开发", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "设计并实现 API 接口，含文档与契约测试",
+             "detail": "根据需求设计 RESTful API：路由定义、请求/响应模型、错误码规范、鉴权中间件和限流策略。同步输出接口文档和契约测试用例。",
+             "outputs": "API 实现 + 接口文档 + 契约测试", "next_steps": json.dumps(["QA", "CR"])},
+            {"id": "c65", "code": "DM", "name": "依赖管理", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "依赖添加、升级、冲突解决与安全审计",
+             "detail": "评估新依赖的必要性、包体积、维护活跃度和安全记录，处理版本冲突和 peer dependency 问题。审计已有依赖的安全漏洞。",
+             "outputs": "依赖变更记录 + 安全审计报告", "next_steps": json.dumps(["DS"])},
+            {"id": "c66", "code": "PI", "name": "性能优化", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "定位性能瓶颈并实施优化，前后基准对比",
+             "detail": "通过 profiling 工具定位热点函数、慢查询、内存泄漏等瓶颈，制定优化方案并实施。每项优化必须有基准对比数据验证效果。",
+             "outputs": "优化代码 + 基准对比报告", "next_steps": json.dumps(["CR", "QA"])},
+            {"id": "c67", "code": "DB", "name": "数据库迁移", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "编写数据库 Schema 变更与数据迁移脚本，含回滚方案",
+             "detail": "编写安全的数据库迁移脚本：Schema 变更（加列/改类型/加索引）和数据迁移（批量更新/数据清洗）。每个迁移必须有对应的回滚脚本。",
+             "outputs": "迁移脚本 + 回滚脚本 + 验证方案", "next_steps": json.dumps(["DS", "CR"])},
+            {"id": "c68", "code": "CI", "name": "CI/CD 集成", "phase": "implementation", "is_protected": 1, "is_enabled": 1,
+             "description": "编写或修改 CI/CD 流水线配置，确保构建与部署自动化",
+             "detail": "根据项目需求编写或修改 CI 配置（GitHub Actions / GitLab CI），涵盖代码检查、单元测试、构建打包和部署流程。",
+             "outputs": "CI/CD 配置 + 流水线验证结果", "next_steps": json.dumps(["DS"])},
+            {"id": "c69", "code": "SR", "name": "提交审阅", "phase": "qa", "is_protected": 1, "is_enabled": 1,
+             "description": "生成结构化 PR，含变更摘要、审阅指南与质量信号，发起人工确认",
+             "detail": "执行完整 SR 流程：自动分析变更规模分 Tier，运行工具验证，AI 自检，生成结构化 PR 含变更摘要、审阅指南和质量信号，创建 PR 等待人工审批。",
+             "outputs": "PR（含变更摘要 + 审阅指南 + 质量报告）", "next_steps": json.dumps([])},
         ]
         conn.execute(insert(commands_table), command_seeds)
 
@@ -741,24 +915,28 @@ def _seed_agents_if_empty() -> None:
              "created_by": "system", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-04-01T00:00:00Z"},
 
             {"id": "agent-dev", "name": "Amelia",
-             "description": "Story 实现 · 单元测试 · 代码交付（可并行多实例）",
-             "role": "dev", "source": "builtin", "status": "active", "version": "v1",
-             "command_ids": json.dumps(["c10", "c25"]),
-             "prompt_blocks": json.dumps({**_bp,
-                 "roleDefinition": "你是 Amelia，AI-DZHT 的研发工程师 Agent，极简精准，用代码说话。",
-                 "capabilityScope": "严格按照 Story 规格完成代码实现和单元测试，100% 测试通过才算完成。"}),
+             "description": "Story 实现 · 代码审查 · 问题诊断 · 重构优化 · API 开发 · DB 迁移 · CI/CD · 提交审阅",
+             "role": "dev", "source": "builtin", "status": "active", "version": "v3",
+             "command_ids": json.dumps(["c10", "c14", "c26", "c61", "c62", "c63", "c64", "c65", "c66", "c67", "c68", "c69", "c25"]),
+             "prompt_blocks": json.dumps({
+                 "roleDefinition": "你是 Amelia，AI-DZHT 的研发工程师 Agent。你极简精准，用代码说话，每一行代码都经得起审查。你兼具匠人的严谨和工程师的务实——既追求代码质量，也尊重交付节奏。",
+                 "capabilityScope": "你掌握 13 项核心能力：DS Story开发、CR 代码审查、QQ 快速开发、RF 代码重构、DG 问题诊断、GT Git工作流、API API开发、DM 依赖管理、PI 性能优化、DB 数据库迁移、CI CI/CD集成、SR 提交审阅、ER Epic复盘。",
+                 "behaviorConstraints": "1. 安全第一：防范 OWASP Top 10 漏洞。2. 架构约束：遵循已有架构决策。3. 测试纪律：100% 测试通过才能标记完成。4. 代码质量：禁止 any 逃逸、硬编码魔法值。5. 最小变更原则：只改需要改的。6. Git 规范：Conventional Commits。7. 提交审阅强制：所有变更必须通过 SR 发起 PR 经人工确认。",
+                 "outputSpec": "代码遵循项目已有代码风格。测试覆盖正常路径+边界条件+错误场景。PR 输出按变更 Tier 自动选择模板。"}),
              "share_scope": "team", "is_protected": 1, "forked_from": None,
-             "created_by": "system", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-04-14T00:00:00Z"},
+             "created_by": "system", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-04-19T00:00:00Z"},
 
             {"id": "agent-qa", "name": "Quinn",
-             "description": "自动化测试 · 代码评审 · 质量把关",
-             "role": "qa", "source": "builtin", "status": "active", "version": "v1",
-             "command_ids": json.dumps(["c13", "c14"]),
-             "prompt_blocks": json.dumps({**_bp,
-                 "roleDefinition": "你是 Quinn，AI-DZHT 的 QA 工程师 Agent，务实直接，专注快速覆盖。",
-                 "capabilityScope": "为已实现功能快速生成自动化测试用例，并对代码进行多维度质量评审。"}),
+             "description": "全生命周期质量工程：测试策略 · 可测试性评审 · 测试生成 · 质量门禁 · 增量选测 · 成本追踪 · 跨Agent协作",
+             "role": "qa", "source": "builtin", "status": "active", "version": "v2",
+             "command_ids": json.dumps(["c13", "c14", "c41", "c42", "c43", "c44", "c45", "c46", "c47", "c48", "c49", "c50", "c51", "c52", "c53", "c54", "c55"]),
+             "prompt_blocks": json.dumps({
+                 "roleDefinition": "你是 Quinn，AI-DZHT 的资深质量工程师 Agent。你贯穿整个研发周期——从需求阶段的可测试性评审，到架构阶段的测试策略规划，再到实现阶段的测试生成与质量门禁执行。你是团队的质量守门人：风险驱动、证据说话、每个判断都可追溯。",
+                 "capabilityScope": "你掌握 18 项核心能力，覆盖策略规划（TS 测试策略/TRV 可测试性评审/SA 验收标准强化）、测试执行（QA 自动化测试/BE 浏览器测试/TD 测试数据/IT 增量选测）、分析洞察（TH 测试历史/CT 成本追踪/LJ 质量评审/GT 缺陷验证/RS 回归策略）、工程工具（FD Flake检测/OB 仪表盘）和质量控制（QG 质量门禁/CR 代码审查/XA 跨Agent协作）。",
+                 "behaviorConstraints": "1. 风险驱动：测试投入与风险正相关。2. Shift-Left：尽早介入。3. 测试金字塔纪律：E2E≤15%，集成 20-30%，单元 60-70%。4. 代码验证强制：生成的测试代码必须通过语法检查和 flaky 模式检测。5. 质量门禁诚实：硬指标不达标必须阻断。6. 幻觉检测：生成的测试不得引用不存在的函数、API 或模块。7. 套件健康：持续关注测试维护成本。",
+                 "outputSpec": "测试代码遵循项目已有测试框架和惯例，命名清晰（test_模块_场景_预期）。策略文档使用表格和风险矩阵。质量报告必含健康度评分（0-100）和趋势指标（↑/↓/→）。门禁报告明确 Go/No-Go 结论。所有产出物附带信任度标记。"}),
              "share_scope": "team", "is_protected": 1, "forked_from": None,
-             "created_by": "system", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-04-01T00:00:00Z"},
+             "created_by": "system", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-04-19T00:00:00Z"},
 
             {"id": "agent-quickdev", "name": "Barry",
              "description": "意图→规格→代码全链路 · 最小仪式感 · 快速交付",
@@ -864,12 +1042,26 @@ def _seed_users_if_empty() -> None:
 
 
 def _ensure_reqlead_agent() -> None:
-    """增量迁移：已有 DB 若缺少 agent-reqlead 则插入。"""
+    """增量迁移：已有 DB 若缺少 agent-reqlead 则插入；若已存在但缺少 workshopConfig 则补上。"""
     with engine.begin() as conn:
         exists = conn.execute(
             select(agents_table).where(agents_table.c.id == "agent-reqlead")
         ).first()
         if exists:
+            # 检查是否缺少 workshopConfig，补上
+            pb = json.loads(exists.prompt_blocks) if exists.prompt_blocks else {}
+            if "workshopConfig" not in pb:
+                pb["workshopConfig"] = {
+                    "enabled": True,
+                    "defaultType": "feature",
+                    "requirementTypes": ["feature", "new_product", "tech_refactor"],
+                    "maxDomainsSkipped": 2,
+                }
+                conn.execute(
+                    agents_table.update()
+                    .where(agents_table.c.id == "agent-reqlead")
+                    .values(prompt_blocks=json.dumps(pb))
+                )
             return
         conn.execute(insert(agents_table).values({
             "id": "agent-reqlead", "name": "Lena",
@@ -899,6 +1091,12 @@ def _ensure_reqlead_agent() -> None:
                     "PRD 须包含执行摘要、用户故事、功能需求、非功能需求和验收标准。"
                     "每份产出物开头须有 50 字以内的摘要。"
                 ),
+                "workshopConfig": {
+                    "enabled": True,
+                    "defaultType": "feature",
+                    "requirementTypes": ["feature", "new_product", "tech_refactor"],
+                    "maxDomainsSkipped": 2,
+                },
             }),
             "share_scope": "team", "is_protected": 1, "forked_from": None,
             "created_by": "system", "created_at": "2026-01-01T00:00:00Z",

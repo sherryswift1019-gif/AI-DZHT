@@ -1691,7 +1691,789 @@ def _knowledge_to_suggestions(items: list[dict]) -> list[dict]:
     return suggestions
 
 
-# ── 访谈 Prompt ──────────────────────────────────────────────────────────────
+# ── Workshop 引擎 ────────────────────────────────────────────────────────────
+# Lena 需求总监专用：情境摘要 → 分领域对话 → PRD 生成 → 质量报告
+
+import re
+import uuid
+from dataclasses import dataclass, field
+from .storage import (
+    save_workshop_session, get_workshop_session,
+    update_workshop_session,
+)
+
+# ── Workshop 超时配置 ──
+
+WORKSHOP_TIMEOUTS = {
+    "briefing_llm": 15,
+    "domain_question_llm": 15,
+    "prd_generation_llm": 60,
+    "adversarial_llm": 30,
+}
+
+# ── 领域必问项配置 ──
+
+WORKSHOP_DOMAIN_TOPICS: dict[str, dict[str, dict]] = {
+    "feature": {
+        "domain_business": {
+            "name": "业务目标与度量",
+            "icon": "📊",
+            "description": "明确做这个功能的 WHY 和成功标准",
+            "requiredTopics": [
+                "[必答] 业务动机（为什么现在做这个功能？解决什么痛点？）",
+                "[必答] 成功指标/KPI（怎么衡量这个功能做得好不好？需要具体数字）",
+                "[条件] 如果是营收驱动 → 追问商业模型和变现路径",
+                "[条件] 如果涉及竞品压力 → 追问差异化策略",
+            ],
+        },
+        "domain_users": {
+            "name": "用户角色与场景",
+            "icon": "👥",
+            "description": "明确 WHO 使用和核心 WHAT 场景",
+            "requiredTopics": [
+                "[必答] 用户角色列表（有哪些角色会使用？）",
+                "[必答] 每个角色的 Top 3 高频操作场景（按优先级排）",
+                "[必答] 场景优先级排序（MVP 做哪些场景？）",
+                "[条件] 如果多角色 → 追问角色间权限差异和数据隔离",
+                "[条件] 如果有外部用户 → 追问鉴权方式",
+            ],
+        },
+        "domain_scope": {
+            "name": "功能边界",
+            "icon": "🔲",
+            "description": "明确做什么、不做什么、怎么和外部系统衔接",
+            "requiredTopics": [
+                "[必答] 功能清单确认（列出所有要做的功能，标记优先级）",
+                "[必答] MVP 范围划定（第一版必须交付什么？）",
+                "[必答] 明确排除项（哪些功能这次不做？）",
+                "[条件] 如果涉及外部系统 → 追问集成方式（API/导入导出/实时同步）",
+                "[条件] 如果涉及数据迁移 → 追问迁移策略和数据量",
+            ],
+        },
+        "domain_tech": {
+            "name": "技术与约束",
+            "icon": "⚙️",
+            "description": "明确技术限制条件和非功能需求",
+            "requiredTopics": [
+                "[必答] 性能要求（响应时间、并发量、数据规模）",
+                "[必答] 兼容性要求（浏览器/设备/分辨率）",
+                "[必答] 安全与合规（数据加密、权限控制、审计日志）",
+                "[条件] 如果涉及大数据量 → 追问分页/搜索/导出策略",
+                "[条件] 如果涉及文件上传 → 追问格式限制和大小限制",
+            ],
+        },
+        "domain_priority": {
+            "name": "优先级与风险",
+            "icon": "📋",
+            "description": "明确排序和风险预判",
+            "requiredTopics": [
+                "[必答] 上线时间期望（有没有 deadline？）",
+                "[必答] 资源约束（团队规模、技术栈限制）",
+                "[必答] 已知风险（技术风险、依赖风险、业务风险）",
+                "[条件] 如果时间紧急 → 追问降级方案（哪些功能可以砍？）",
+                "[条件] 如果有外部依赖 → 追问依赖方交付时间和兜底方案",
+            ],
+        },
+    },
+    "new_product": {
+        "domain_market": {
+            "name": "市场定位",
+            "icon": "🎯",
+            "description": "明确市场机会和竞争格局",
+            "requiredTopics": [
+                "[必答] 目标市场和目标客户群体",
+                "[必答] 竞品分析（至少 2 个直接竞品的优劣势）",
+                "[必答] 差异化价值主张（为什么用户选你不选竞品？）",
+                "[条件] 如果是 B2B → 追问决策链和采购流程",
+            ],
+        },
+        "domain_business": {
+            "name": "商业模型与目标",
+            "icon": "📊",
+            "description": "明确商业模式和成功标准",
+            "requiredTopics": [
+                "[必答] 商业模式（免费增值/订阅/买断/佣金？）",
+                "[必答] 核心成功指标（用户获取/激活/留存/变现）",
+                "[必答] 首年目标（用户量/营收/市场占有率）",
+                "[条件] 如果是平台型 → 追问冷启动策略",
+            ],
+        },
+        "domain_users": {
+            "name": "用户角色与场景",
+            "icon": "👥",
+            "description": "明确 WHO 使用和核心 WHAT 场景",
+            "requiredTopics": [
+                "[必答] 用户角色列表（有哪些角色会使用？）",
+                "[必答] 每个角色的 Top 3 高频操作场景（按优先级排）",
+                "[必答] 场景优先级排序（MVP 做哪些场景？）",
+                "[条件] 如果多角色 → 追问角色间权限差异和数据隔离",
+            ],
+        },
+        "domain_scope": {
+            "name": "功能边界",
+            "icon": "🔲",
+            "description": "明确做什么、不做什么",
+            "requiredTopics": [
+                "[必答] 功能清单确认（列出所有要做的功能，标记优先级）",
+                "[必答] MVP 范围划定（第一版必须交付什么？）",
+                "[必答] 明确排除项（哪些功能这次不做？）",
+                "[条件] 如果涉及外部系统 → 追问集成方式",
+            ],
+        },
+        "domain_priority": {
+            "name": "优先级与风险",
+            "icon": "📋",
+            "description": "明确排序和风险预判",
+            "requiredTopics": [
+                "[必答] 上线时间期望",
+                "[必答] 资源约束",
+                "[必答] 已知风险 Top 3",
+                "[条件] 如果时间紧急 → 追问降级方案",
+            ],
+        },
+    },
+    "tech_refactor": {
+        "domain_business": {
+            "name": "重构动因与目标",
+            "icon": "📊",
+            "description": "明确重构的 WHY 和量化目标",
+            "requiredTopics": [
+                "[必答] 重构动机（技术债/性能瓶颈/合规要求/可维护性？）",
+                "[必答] 量化目标（重构后的性能/维护成本/部署频率对比）",
+                "[必答] 不重构的后果（风险量化）",
+            ],
+        },
+        "domain_impact": {
+            "name": "影响范围分析",
+            "icon": "🔍",
+            "description": "明确重构影响的系统边界",
+            "requiredTopics": [
+                "[必答] 受影响的模块/服务列表",
+                "[必答] 受影响的 API/接口契约",
+                "[必答] 受影响的下游消费者",
+                "[条件] 如果涉及数据库 → 追问 migration 策略",
+            ],
+        },
+        "domain_strategy": {
+            "name": "重构策略",
+            "icon": "🔧",
+            "description": "明确重构方式和执行路径",
+            "requiredTopics": [
+                "[必答] 重构策略（大爆炸/渐进/Strangler Fig？）",
+                "[必答] 分步执行计划（每步交付什么、可验证什么）",
+                "[必答] 回滚方案（每步失败如何回退？）",
+                "[条件] 如果是渐进式 → 追问新旧系统共存策略",
+            ],
+        },
+        "domain_tech": {
+            "name": "技术方案与约束",
+            "icon": "⚙️",
+            "description": "明确技术方案选择和限制",
+            "requiredTopics": [
+                "[必答] 技术方案选型（新框架/新架构/新存储？）",
+                "[必答] 兼容性约束（API 向后兼容？数据格式兼容？）",
+                "[必答] 测试策略（回归测试覆盖率要求）",
+            ],
+        },
+        "domain_priority": {
+            "name": "风险与排期",
+            "icon": "📋",
+            "description": "明确风险预判和时间线",
+            "requiredTopics": [
+                "[必答] 时间窗口（有 deadline 吗？低流量期？）",
+                "[必答] 已知风险 Top 3",
+                "[必答] 监控与验证方案（怎么确认重构成功？）",
+                "[条件] 如果涉及生产环境 → 追问灰度发布策略",
+            ],
+        },
+    },
+}
+
+
+def _get_domains_for_type(requirement_type: str) -> list[dict]:
+    """返回指定需求类型的领域列表（有序）。"""
+    topics = WORKSHOP_DOMAIN_TOPICS.get(requirement_type, WORKSHOP_DOMAIN_TOPICS["feature"])
+    return [
+        {"id": domain_id, **domain_cfg}
+        for domain_id, domain_cfg in topics.items()
+    ]
+
+
+# ── 领域 → PRD 章节映射 ──
+
+DOMAIN_SECTION_MAP = {
+    "feature": {
+        "domain_business": ["§2.1 业务动机", "§2.2 成功指标", "§2.3 系统关系"],
+        "domain_users":    ["§3.1 角色定义", "§3.2 核心场景", "§3.3 用户旅程"],
+        "domain_scope":    ["§4.1 功能清单", "§4.2 用户故事", "§8.1 MVP 范围"],
+        "domain_tech":     ["§5 非功能需求", "§6 信息架构"],
+        "domain_priority": ["§8 优先级与排期", "§9 风险登记簿"],
+    },
+    "new_product": {
+        "domain_market":   ["§2.1 市场定位", "§2.2 竞品分析"],
+        "domain_business": ["§2.3 商业模型", "§2.4 成功指标"],
+        "domain_users":    ["§3.1 角色定义", "§3.2 核心场景", "§3.3 用户旅程"],
+        "domain_scope":    ["§4.1 功能清单", "§4.2 用户故事", "§8.1 MVP 范围"],
+        "domain_priority": ["§8 优先级与排期", "§9 风险登记簿"],
+    },
+    "tech_refactor": {
+        "domain_business": ["§2.1 重构动因", "§2.2 量化目标"],
+        "domain_impact":   ["§3 影响范围", "§6 信息架构"],
+        "domain_strategy": ["§4 重构计划", "§8.1 分步计划"],
+        "domain_tech":     ["§5 技术方案与约束"],
+        "domain_priority": ["§8 排期", "§9 风险登记簿"],
+    },
+}
+
+
+# ── Workshop Prompts ──
+
+_WORKSHOP_SYSTEM_PROMPT = """{persona}
+
+你是需求总监，正在与用户进行 **一对一需求对话**。你的目标是通过自然对话，充分理解需求，最终产出一份高质量的 PRD 文档。
+
+## 背景信息
+- 需求标题：{req_title}
+- 需求描述：{req_summary}
+{context_block}
+{prev_outputs}
+
+## 你需要覆盖的信息领域
+{domains_overview}
+
+## 对话规则
+
+1. **第一轮**：展示你对需求的理解（已掌握的信息、需求类型判断、缺失信息），请用户确认或纠正
+2. **用户回复后**：针对用户的回答做出响应（确认理解、追问细节、纠正自己的错误），然后提出下一批问题
+3. **每轮提 2-4 个问题**，围绕上面的信息领域，逐步深入。已经确认的信息不要重复问
+4. **用户说"跳过"或"暂时没有"的信息**，标记为待补充，不要纠缠
+5. **当你认为信息足够生成 PRD 时**（不一定要覆盖所有领域），主动告诉用户：
+   - 总结你掌握的全部信息
+   - 问用户"我现在可以开始生成 PRD 了吗？还有需要补充的吗？"
+6. **用户确认可以生成后**，在回复末尾加上标记 `<!-- GENERATE_PRD -->`（这个标记不会显示给用户）
+7. **PRD 生成后**，用户可能提出修改意见。你需要理解修改意见并重新生成 PRD，在回复末尾再次加上 `<!-- GENERATE_PRD -->`
+
+## 语气
+经验丰富的 BA，做了功课来开会。自信、简洁、专业。不用套话，不用"让我们开始吧"。
+
+## 格式
+- 使用 Markdown 格式输出
+- 用 **加粗** 标出你的问题
+- 用 ✅ 标出已确认的信息
+- 用 ❓ 标出待补充的信息
+
+不要输出 JSON。直接输出 Markdown。"""
+
+
+_WORKSHOP_PRD_GENERATION_PROMPT = """{persona}
+
+## 任务
+基于前期信息采集的结果，为需求「{req_title}」生成完整的产品需求文档（PRD）。
+
+## 对话记录（信息来源）
+{conversation_summary}
+
+## 项目上下文
+{context_block}
+
+## 输出格式
+
+请严格按照以下模板生成 Markdown PRD。每个章节必须满足标注的质量标准。
+
+# {{需求名称}} — 产品需求文档
+
+## 1. 执行摘要
+<!-- 50字以内，一句话说清做什么+为什么+给谁用 -->
+
+## 2. 业务背景与目标
+### 2.1 业务动机
+### 2.2 成功指标（KPI）
+| 指标 | 当前基线 | 目标值 | 度量方式 |
+### 2.3 与现有系统的关系
+
+## 3. 用户画像与使用场景
+### 3.1 角色定义
+| 角色 | 职责 | 使用频率 | 核心诉求 |
+### 3.2 核心使用场景
+### 3.3 用户旅程
+
+## 4. 功能需求
+### 4.1 功能清单
+| ID | 功能名称 | 描述 | 优先级 | 关联场景 |
+### 4.2 用户故事
+### 4.3 验收标准
+
+## 5. 非功能需求
+### 5.1 性能
+### 5.2 安全与合规
+### 5.3 兼容性
+### 5.4 可用性
+
+## 6. 信息架构
+### 6.1 核心数据实体
+### 6.2 状态流转
+
+## 7. 验收标准总表
+| 场景 | 故事 | AC ID | Given | When | Then |
+
+## 8. 优先级与排期
+### 8.1 MVP 范围
+### 8.2 迭代计划
+### 8.3 里程碑
+
+## 9. 风险登记簿
+| 风险 | 概率 | 影响 | 缓解策略 | 责任人 |
+
+## 10. 附录
+### 10.1 术语表
+### 10.2 参考资料
+### 10.3 信息待补充项清单
+
+## 溯源标注规则
+- `[✓ 用户确认]` — 用户在对话中明确回答
+- `[◐ AI 推断]` — 从已有信息合理推断
+- `[? 信息待补充]` — 用户跳过或未明确回答
+
+## 禁止行为
+- 不要生成占位内容
+- 不要使用模糊词
+- 不要编造用户没提到的功能需求
+- 信息不足的章节写 `[? 信息待补充]`
+
+只输出 Markdown PRD，不要输出其他内容。"""
+
+
+_WORKSHOP_ADVERSARIAL_REVIEW_PROMPT = """你是一位严格的 PRD 审查专家。你的任务是找出这份 PRD 中的逻辑漏洞、矛盾和遗漏。
+
+## 审查对象
+{prd_content}
+
+## 用户已确认的信息（不要质疑这些的正确性）
+{confirmed_info_summary}
+
+## 审查维度
+
+1. **逻辑漏洞**：用户故事是否覆盖了所有场景？是否有场景没有对应的功能？
+2. **内部矛盾**：功能需求和非功能需求是否冲突？优先级和排期是否对齐？
+3. **遗漏检测**：核心场景是否有异常流程？权限模型是否有越权路径？
+4. **可行性质疑**：技术约束下功能是否可实现？性能目标是否合理？
+
+## 输出要求
+
+只输出最重要的 5-8 个发现。每个发现必须可操作——不是"建议完善"而是"缺少XX，会导致YY"。
+
+### JSON Schema
+{{
+  "findings": [
+    {{
+      "severity": "critical|warning",
+      "category": "逻辑漏洞|内部矛盾|遗漏检测|可行性质疑",
+      "title": "发现标题（10字内）",
+      "description": "具体问题描述",
+      "impact": "如果不处理会怎样",
+      "suggestion": "具体修改建议",
+      "affectedSections": ["§4.2", "§7"]
+    }}
+  ],
+  "overallAssessment": "一句话总评"
+}}
+
+只输出 JSON，不要输出其他内容。"""
+
+
+# ── Workshop 上下文编译 ──
+
+def _compile_workshop_context(
+    all_domain_answers: dict[str, list[dict]],
+    known_info: list[dict],
+    requirement_type: str,
+) -> str:
+    """将按领域组织的 Q&A 转换为按 PRD 章节组织的结构化上下文。"""
+    section_map = DOMAIN_SECTION_MAP.get(requirement_type, DOMAIN_SECTION_MAP["feature"])
+
+    sections: dict[str, list[str]] = {}
+    for domain_id, answers in all_domain_answers.items():
+        target_sections = section_map.get(domain_id, [])
+        for section_name in target_sections:
+            if section_name not in sections:
+                sections[section_name] = []
+            for qa in answers:
+                confidence = qa.get("confidence", "confirmed")
+                tag = {"confirmed": "[✓ 用户确认]",
+                       "inferred": "[◐ AI 推断]",
+                       "pending": "[? 信息待补充]"}.get(confidence, "")
+                sections[section_name].append(
+                    f"- Q: {qa.get('q', '')}\n  A: {qa.get('a', '')} {tag}"
+                )
+
+    lines = ["以下信息按 PRD 章节组织：\n"]
+    for section_name, items in sections.items():
+        lines.append(f"### {section_name}")
+        lines.extend(items)
+        lines.append("")
+
+    if known_info:
+        lines.append("### 项目基础信息（来自项目配置）")
+        for info in known_info:
+            lines.append(f"- {info.get('label', '')}: {info.get('value', '')}")
+
+    return "\n".join(lines)
+
+
+# ── 8 条规则引擎 ──
+
+_VAGUE_WORDS = ["快速", "友好", "合理", "简单", "适当", "较好", "尽量", "大量", "及时"]
+
+
+@dataclass
+class QualityFinding:
+    rule_id: int
+    severity: str
+    title: str
+    description: str
+    suggestion: str
+    affected_sections: list[str] = field(default_factory=list)
+
+
+@dataclass
+class QualityReport:
+    total_score: int
+    dimensions: dict
+    findings: list[QualityFinding]
+    has_blocking_issues: bool
+
+
+def _run_quality_checks(prd_content: str) -> QualityReport:
+    """8 条规则检查，纯代码，0 LLM 调用。"""
+    findings: list[QualityFinding] = []
+
+    # 规则 1: 必须章节覆盖
+    required_headings = ["执行摘要", "业务背景", "用户画像", "功能需求",
+                         "非功能需求", "信息架构", "验收标准", "优先级", "风险"]
+    for heading in required_headings:
+        if heading not in prd_content:
+            findings.append(QualityFinding(1, "blocking", f"缺少章节：{heading}",
+                f"PRD 中未找到「{heading}」相关章节", f"补充 {heading} 章节"))
+
+    # 规则 2: AC 格式 Given-When-Then
+    gwt_pattern = re.compile(r"Given\s.+?When\s.+?Then\s", re.IGNORECASE | re.DOTALL)
+    gwt_count = len(gwt_pattern.findall(prd_content))
+    story_count = len(re.findall(r"(?:As a|作为)\s", prd_content))
+    if story_count > 0 and gwt_count < story_count:
+        findings.append(QualityFinding(2, "blocking", "AC 格式不完整",
+            f"发现 {story_count} 个用户故事但只有 {gwt_count} 条 Given-When-Then AC",
+            "为每个用户故事补充至少 1 条 Given-When-Then 格式的验收标准",
+            ["§4.3", "§7"]))
+
+    # 规则 5: P0→MVP 对齐
+    p0_features = re.findall(r"\|\s*(F\d+)\s*\|[^|]+\|[^|]+\|\s*P0\s*\|", prd_content)
+    mvp_section = prd_content.split("MVP")[1] if "MVP" in prd_content else ""
+    for feat_id in p0_features:
+        if feat_id not in mvp_section:
+            findings.append(QualityFinding(5, "blocking", f"P0 功能未入 MVP",
+                f"{feat_id} 标记为 P0 但未出现在 MVP 范围中",
+                f"将 {feat_id} 加入 MVP 范围或降低优先级",
+                ["§4.1", "§8.1"]))
+
+    # 规则 6: 模糊词检测
+    for word in _VAGUE_WORDS:
+        count = prd_content.count(word)
+        if count > 0:
+            findings.append(QualityFinding(6, "warning", f"含模糊词「{word}」",
+                f"在 PRD 中发现 {count} 处使用了「{word}」",
+                "替换为可量化的具体指标",
+                ["§4.3", "§5"]))
+
+    # 规则 7: NFR 量化指标
+    nfr_match = re.search(r"非功能需求(.*?)(?=##\s|\Z)", prd_content, re.DOTALL)
+    if nfr_match:
+        nfr_section = nfr_match.group(1)
+        if not re.search(r"\d+\s*(ms|秒|MB|GB|%|次|个|条)", nfr_section):
+            findings.append(QualityFinding(7, "warning", "NFR 缺少量化指标",
+                "非功能需求章节未发现任何数字+单位的量化指标",
+                "为性能、并发、数据量等添加具体数字",
+                ["§5"]))
+
+    # 规则 8: 溯源标注完整
+    traceability_tags = len(re.findall(r"\[✓|◐|\?]", prd_content))
+    if traceability_tags == 0:
+        findings.append(QualityFinding(8, "blocking", "缺少溯源标注",
+            "PRD 中未发现任何 [✓]/[◐]/[?] 溯源标注",
+            "为每个关键断言添加信息来源标注"))
+
+    # 计算评分
+    blocking_count = sum(1 for f in findings if f.severity == "blocking")
+    warning_count = sum(1 for f in findings if f.severity == "warning")
+    base_score = 100 - blocking_count * 10 - warning_count * 3
+
+    return QualityReport(
+        total_score=max(0, min(100, base_score)),
+        dimensions={
+            "信息完整度": {"score": max(0, 100 - len([f for f in findings if f.rule_id in (1, 8)]) * 15), "details": []},
+            "结构完整性": {"score": max(0, 100 - len([f for f in findings if f.rule_id == 1]) * 10), "details": []},
+            "需求质量":   {"score": max(0, 100 - len([f for f in findings if f.rule_id in (2, 6)]) * 8), "details": []},
+            "一致性":     {"score": max(0, 100 - len([f for f in findings if f.rule_id in (5, 7)]) * 10), "details": []},
+        },
+        findings=findings,
+        has_blocking_issues=blocking_count > 0,
+    )
+
+
+# ── Workshop 多轮对话执行引擎 ──
+
+def _build_domains_overview(requirement_type: str = "feature") -> str:
+    """构建领域概览文本，用于 system prompt。"""
+    domains = _get_domains_for_type(requirement_type)
+    lines = []
+    for d in domains:
+        topics = d.get("requiredTopics", [])
+        topics_str = "  ".join(topics[:3])  # 最多展示3条
+        lines.append(f"- **{d['name']}**（{d['description']}）：{topics_str}")
+    return "\n".join(lines)
+
+
+def _summarize_conversation(messages: list[dict]) -> str:
+    """将对话历史转为可读摘要（用于 PRD 生成 prompt）。"""
+    lines = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        prefix = "Lena" if m["role"] == "assistant" else "用户"
+        content = m["content"]
+        if len(content) > 500:
+            content = content[:500] + "..."
+        lines.append(f"**{prefix}**：{content}")
+    return "\n\n".join(lines)
+
+
+async def execute_workshop_step(
+    req_id: str,
+    step_id: str,
+    agent_name: str,
+    agent_role: str,
+    req_title: str,
+    req_summary: str,
+    project_context: dict,
+    prev_artifact_summaries: str,
+    prompt_blocks: dict | None = None,
+    on_progress=None,
+    code_context: str = "",
+    user_input: dict | None = None,
+) -> dict:
+    """多轮对话式 Workshop — 每次调用处理一轮对话。"""
+
+    async def emit(tag: str, msg: str, extra_metadata: dict | None = None):
+        if on_progress:
+            await on_progress(tag, msg, extra_metadata)
+
+    persona = _build_persona(agent_name, agent_role, prompt_blocks)
+    context_block = assemble_context(project_context, agent_name)
+    if code_context:
+        context_block += f"\n\n[CODE REPOSITORY]\n{code_context}"
+    prev_outputs = prev_artifact_summaries or "（无）"
+
+    # 从 DB 加载当前状态
+    session = get_workshop_session(req_id, step_id)
+
+    # ── 首次启动：构建 system prompt，生成第一轮对话 ──
+    if session is None:
+        await emit("workshop_message", "正在分析需求信息...")
+
+        domains_overview = _build_domains_overview()
+        system_content = _WORKSHOP_SYSTEM_PROMPT.format(
+            persona=persona,
+            req_title=req_title,
+            req_summary=req_summary or "（无详细描述）",
+            context_block=context_block,
+            prev_outputs=prev_outputs,
+            domains_overview=domains_overview,
+        )
+
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": "请开始分析这个需求。"},
+        ]
+
+        raw = await _chat(messages=messages, max_tokens=2000)
+        messages.append({"role": "assistant", "content": raw})
+
+        session_id = str(uuid.uuid4())
+        save_workshop_session(
+            session_id=session_id,
+            req_id=req_id,
+            step_id=step_id,
+            phase="active",
+            messages=messages,
+        )
+
+        await emit("workshop_message", raw, {
+            "workshop_phase": "active",
+            "session_id": session_id,
+        })
+
+        return {"status": "need_input", "workshop_phase": "active"}
+
+    # ── 已有会话：处理用户输入 ──
+    messages = session.get("messages", [])
+    user_text = (user_input or {}).get("text", "")
+
+    # 用户审批通过 PRD
+    if user_text == "__approve__":
+        prd_path = session.get("prdFilePath", "")
+        prd_content = ""
+        if prd_path:
+            from pathlib import Path
+            p = Path(prd_path)
+            if p.exists():
+                prd_content = p.read_text(encoding="utf-8")
+
+        update_workshop_session(session["id"], phase="done")
+
+        await emit("workshop_final_delivery", "PRD 已通过审批")
+
+        return {
+            "status": "done",
+            "artifacts": [{
+                "name": f"{req_title} — PRD",
+                "type": "document",
+                "summary": f"产品需求文档",
+                "content": prd_content,
+            }],
+        }
+
+    # 跳过（中止对话直接生成）
+    if (user_input or {}).get("skip"):
+        user_text = "信息已经足够了，请直接生成 PRD。"
+
+    if not user_text:
+        return {"status": "need_input", "workshop_phase": "active"}
+
+    # 追加用户消息
+    messages.append({"role": "user", "content": user_text})
+
+    # 调用 LLM 获取 Lena 回复
+    raw = await _chat(messages=messages, max_tokens=2000)
+    messages.append({"role": "assistant", "content": raw})
+
+    # 检查是否有 PRD 生成标记
+    if "<!-- GENERATE_PRD -->" in raw:
+        await emit("workshop_generating", "正在生成 PRD 文档...")
+
+        # 提取对话摘要用于 PRD 生成
+        conversation_summary = _summarize_conversation(messages)
+
+        prd_content = await _chat(
+            messages=[{"role": "user", "content": _WORKSHOP_PRD_GENERATION_PROMPT.format(
+                persona=persona,
+                req_title=req_title,
+                conversation_summary=conversation_summary,
+                context_block=context_block,
+            )}],
+            max_tokens=8000,
+        )
+
+        # 保存 PRD 文件
+        from pathlib import Path
+        prd_dir = Path(__file__).parent.parent / "workspaces" / "prd"
+        prd_dir.mkdir(parents=True, exist_ok=True)
+        prd_path = prd_dir / f"{req_id}_{step_id}.md"
+        prd_path.write_text(prd_content, encoding="utf-8")
+
+        # 质量检查
+        quality_report = _run_quality_checks(prd_content)
+        report_dict = {
+            "totalScore": quality_report.total_score,
+            "dimensions": quality_report.dimensions,
+            "findings": [
+                {"ruleId": f.rule_id, "severity": f.severity, "title": f.title,
+                 "description": f.description, "suggestion": f.suggestion,
+                 "affectedSections": f.affected_sections}
+                for f in quality_report.findings
+            ],
+            "hasBlockingIssues": quality_report.has_blocking_issues,
+        }
+
+        # 在对话中追加 PRD 生成消息（这样后续修改可以看到上下文）
+        messages.append({"role": "assistant", "content": f"PRD 已生成（质量评分 {quality_report.total_score}/100）。你可以查看 PRD 内容，如有修改意见请直接告诉我。"})
+
+        update_workshop_session(session["id"],
+            phase="prd_review",
+            prd_file_path=str(prd_path),
+            quality_report=report_dict,
+            messages=messages,
+        )
+
+        # 发送 PRD 就绪通知
+        await emit("workshop_prd_ready", f"PRD 已生成完成，质量评分 **{quality_report.total_score}/100**。请查看并确认。", {
+            "workshop_phase": "prd_review",
+            "prd_file_path": str(prd_path),
+            "quality": report_dict,
+            "artifactName": f"{req_title} — PRD",
+        })
+
+        return {"status": "need_input", "workshop_phase": "prd_review"}
+
+    # PRD 审阅阶段：用户提了修改意见
+    if session["phase"] == "prd_review":
+        # 用户提了修改意见而不是审批 → 重新生成 PRD
+        await emit("workshop_generating", "正在根据修改意见重新生成 PRD...")
+
+        conversation_summary = _summarize_conversation(messages)
+
+        prd_content = await _chat(
+            messages=[{"role": "user", "content": _WORKSHOP_PRD_GENERATION_PROMPT.format(
+                persona=persona,
+                req_title=req_title,
+                conversation_summary=conversation_summary,
+                context_block=context_block,
+            )}],
+            max_tokens=8000,
+        )
+
+        from pathlib import Path
+        prd_path = session.get("prdFilePath", "")
+        if prd_path:
+            Path(prd_path).write_text(prd_content, encoding="utf-8")
+
+        quality_report = _run_quality_checks(prd_content)
+        report_dict = {
+            "totalScore": quality_report.total_score,
+            "dimensions": quality_report.dimensions,
+            "findings": [
+                {"ruleId": f.rule_id, "severity": f.severity, "title": f.title,
+                 "description": f.description, "suggestion": f.suggestion,
+                 "affectedSections": f.affected_sections}
+                for f in quality_report.findings
+            ],
+            "hasBlockingIssues": quality_report.has_blocking_issues,
+        }
+
+        messages.append({"role": "assistant", "content": f"PRD 已根据你的修改意见重新生成（评分 {quality_report.total_score}/100）。"})
+
+        update_workshop_session(session["id"],
+            quality_report=report_dict,
+            messages=messages,
+        )
+
+        await emit("workshop_prd_ready", f"PRD 已根据修改意见重新生成，评分 **{quality_report.total_score}/100**。", {
+            "workshop_phase": "prd_review",
+            "prd_file_path": prd_path,
+            "quality": report_dict,
+            "artifactName": f"{req_title} — PRD",
+        })
+
+        return {"status": "need_input", "workshop_phase": "prd_review"}
+
+    # 普通对话轮次 — 保存并返回
+    update_workshop_session(session["id"], messages=messages)
+
+    # 去掉标记后发送给前端
+    display_content = raw.replace("<!-- GENERATE_PRD -->", "").strip()
+    await emit("workshop_message", display_content, {
+        "workshop_phase": "active",
+    })
+
+    return {"status": "need_input", "workshop_phase": "active"}
 
 _INTERVIEW_SYSTEM = """{persona}
 
